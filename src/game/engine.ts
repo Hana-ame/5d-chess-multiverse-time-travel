@@ -1031,22 +1031,20 @@ export function getLegalMovesForSquare(state: MultiverseState, from: Coord5D): M
   if (!piece || piece.color !== state.turnColor) return [];
 
   const pseudo = getPseudoLegalMovesForPiece(state, from);
-  // Filter out moves that immediately put or leave friendly King in check from or on the resulting board(s)
+  // Filter out moves that leave ANY of the friendly King(s) in check on ANY board.
+  //
+  // NOTE (deep bug fix): 5D Chess lets a player hold multiple kings across parallel
+  // timelines, and a check on ANY of them must be resolved before the turn can be
+  // submitted. The old filter only inspected threats touching the move's
+  // resultingSourceBoard / resultingTargetBoard, so a king in check on a *third*
+  // board (unrelated to the current move) was silently ignored. That allowed the
+  // mover to stage a move elsewhere while a king sat in check, which then made
+  // canSubmitCurrentTurn reject the turn and the game hang. We now reject any
+  // move that leaves the mover in check anywhere.
   return pseudo.filter((move) => {
     const nextState = applyStagedMovePure(state, move);
     const threats = findThreatsToColorKings(nextState, state.turnColor);
-    const directSelfCheck = threats.some(
-      (th) =>
-        (th.from.l === move.resultingSourceBoard.l && th.from.t === move.resultingSourceBoard.t) ||
-        (move.resultingTargetBoard &&
-          th.from.l === move.resultingTargetBoard.l &&
-          th.from.t === move.resultingTargetBoard.t) ||
-        (th.to.l === move.resultingSourceBoard.l && th.to.t === move.resultingSourceBoard.t) ||
-        (move.resultingTargetBoard &&
-          th.to.l === move.resultingTargetBoard.l &&
-          th.to.t === move.resultingTargetBoard.t)
-    );
-    return !directSelfCheck;
+    return threats.length === 0;
   });
 }
 
@@ -1342,9 +1340,15 @@ export function undoStagedMovesBackToBoard(
  */
 export function computeAITurn(state: MultiverseState): MultiverseState {
   let working = cloneMultiverseState(state, true);
+  // The AI must keep staging moves until NO mandatory board remains, otherwise
+  // submitTurnPure refuses (reason_move_required) and the game hangs. The old
+  // hard cap of 8 left the turn unplayable once timeline branching produced more
+  // than 8 mandatory boards. We now loop until the turn is submittable, with a
+  // generous safety cap to guard against pathological infinite branching.
   let safetyCounter = 0;
+  const MAX_AI_STEPS = 400;
 
-  while (safetyCounter < 8 && !working.winner) {
+  while (!working.winner && safetyCounter < MAX_AI_STEPS) {
     safetyCounter++;
     const playable = getPlayableBoards(working, working.turnColor);
     const mandatory = playable.filter((p) => p.isMandatory);
