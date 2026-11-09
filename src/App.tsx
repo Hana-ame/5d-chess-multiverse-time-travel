@@ -164,6 +164,9 @@ export default function App() {
 
   const handleExecuteMove = useCallback((move: Move5D) => {
     setMultiverse((prev) => {
+      // Never allow the human to move Black's pieces in AI (vs. Chronomancer) mode,
+      // even if a stale selection or a stalled AI turn left turnColor === 'b'.
+      if (prev.opponentMode === 'ai' && prev.turnColor === 'b') return prev;
       const next = applyStagedMovePure(prev, move);
       if (move.kind !== 'spatial') {
         soundFX.playTimeJump();
@@ -178,6 +181,12 @@ export default function App() {
   const handleSquareClick = useCallback(
     (coord: Coord5D) => {
       if (gameState !== 'playing' || aiThinking || multiverse.winner) return;
+      // In AI (vs. Chronomancer) mode the human controls White only. Even if the AI
+      // somehow stalls or the aiThinking flag has not flipped yet, the human must
+      // NEVER be able to select or move Black's pieces. Without this guard, a check
+      // where Black is in check could be "helped" by the human dragging Black's king,
+      // which is not allowed in a human-vs-AI game.
+      if (multiverse.opponentMode === 'ai' && multiverse.turnColor === 'b') return;
 
       // 1. Check if clicking a legal move destination for the currently selected piece
       if (selectedCoord) {
@@ -295,6 +304,8 @@ export default function App() {
   const handleSubmitTurn = useCallback(() => {
     if (aiThinking) return;
     setMultiverse((prev) => {
+      // Never let the human submit Black's turn in AI (vs. Chronomancer) mode.
+      if (prev.opponentMode === 'ai' && prev.turnColor === 'b') return prev;
       const check = canSubmitCurrentTurn(prev);
       if (!check.canSubmit) {
         soundFX.playCheckAlert();
