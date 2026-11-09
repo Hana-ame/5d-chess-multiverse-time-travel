@@ -1,0 +1,6 @@
+{
+  "name": "5D Chess: Multiverse Time Travel",
+  "description": "Web-native 5D Chess with Multiverse Time Travel featuring 4-axis spatial-temporal piece movement, parallel timeline branching, cross-timeline check detection, tactical presets, and an AI Chronomancer.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
