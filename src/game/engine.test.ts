@@ -31,7 +31,7 @@ test('initializes 5x5 tactical multiverse with Timeline 0 at t=0', () => {
   const status = getBoardPlayableStatus(state, rootBoard);
   assert.equal(status.isPlayableBoard, true);
   assert.equal(status.isMandatoryPresent, true);
-  assert.equal(status.statusLabel, 'PLAYABLE · PRESENT');
+  assert.equal(status.statusLabel, 'status_playable_present');
 });
 
 test('stages a spatial pawn move on Timeline 0, advances leaf to t=1, and allows revising or submitting turn', () => {

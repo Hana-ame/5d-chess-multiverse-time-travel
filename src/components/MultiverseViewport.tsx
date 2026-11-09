@@ -14,7 +14,8 @@ import {
   getActiveTimelines,
   getBoardPlayableStatus,
 } from '../game/engine';
-import { ChessPieceSVG, PIECE_NAMES } from './ChessPieceSVG';
+import { ChessPieceSVG } from './ChessPieceSVG';
+import { useI18n } from '../i18n';
 
 interface MultiverseViewportProps {
   state: MultiverseState;
@@ -41,6 +42,7 @@ export const MultiverseViewport: React.FC<MultiverseViewportProps> = ({
   onUndoStaged,
   focusPresentSignal,
 }) => {
+  const { t, tf } = useI18n();
   const containerRef = useRef<HTMLDivElement>(null);
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 80, y: 90 });
   const [zoom, setZoom] = useState<number>(1);
@@ -295,7 +297,7 @@ export const MultiverseViewport: React.FC<MultiverseViewportProps> = ({
                 submitStatus.canSubmit ? 'text-emerald-200' : 'text-amber-300'
               }`}
             >
-              THE PRESENT · {formatTurnStep(state.presentStep)}
+              {t('present').toUpperCase()} · {formatTurnStep(state.presentStep)}
             </span>
             {submitStatus.canSubmit && (
               <button
@@ -303,22 +305,22 @@ export const MultiverseViewport: React.FC<MultiverseViewportProps> = ({
                 onClick={onSubmitTurn}
                 className="px-2 py-0.5 rounded bg-amber-400 hover:bg-amber-300 text-slate-950 font-mono text-[10px] font-bold tracking-wide shadow cursor-pointer"
               >
-                Submit Turn ↵
+                {t('submitTurn')} ↵
               </button>
             )}
           </div>
         </div>
 
         {/* 2. Turn Step Column Headers along the top */}
-        {Array.from({ length: maxStep + 1 }, (_, t) => {
-          const isPresent = t === state.presentStep;
-          const turnNum = Math.floor(t / 2) + 1;
-          const isWhiteCol = t % 2 === 0;
+        {Array.from({ length: maxStep + 1 }, (_, stepT) => {
+          const isPresent = stepT === state.presentStep;
+          const turnNum = Math.floor(stepT / 2) + 1;
+          const isWhiteCol = stepT % 2 === 0;
           return (
             <div
-              key={`col_hdr_${t}`}
+              key={`col_hdr_${stepT}`}
               style={{
-                left: `${t * colPitch}px`,
+                left: `${stepT * colPitch}px`,
                 top: `-34px`,
                 width: `${boardWidth}px`,
               }}
@@ -331,7 +333,7 @@ export const MultiverseViewport: React.FC<MultiverseViewportProps> = ({
               }`}
             >
               <span className={isPresent ? 'text-amber-300 font-semibold' : 'text-slate-300'}>
-                Turn {turnNum}
+                {t('turnLabel')} {turnNum}
               </span>
               <span
                 className={`text-[11px] font-semibold px-1.5 py-0.2 rounded ${
@@ -340,7 +342,7 @@ export const MultiverseViewport: React.FC<MultiverseViewportProps> = ({
                     : 'bg-slate-950 text-sky-300 border border-sky-500/40'
                 }`}
               >
-                {isWhiteCol ? 'White (W)' : 'Black (B)'}
+                {isWhiteCol ? t('white') + ' (W)' : t('black') + ' (B)'}
               </span>
             </div>
           );
@@ -353,10 +355,10 @@ export const MultiverseViewport: React.FC<MultiverseViewportProps> = ({
           const firstBoardT = tl?.boards[0]?.t ?? 0;
           const creatorLabel =
             tl?.createdBy === 'w'
-              ? 'White Inactive'
+              ? t('timeline_white_inactive')
               : tl?.createdBy === 'b'
-                ? 'Black Inactive'
-                : 'Inactive Line';
+                ? t('timeline_black_inactive')
+                : t('timeline_inactive');
           return (
             <div
               key={`row_hdr_${l}`}
@@ -381,7 +383,7 @@ export const MultiverseViewport: React.FC<MultiverseViewportProps> = ({
                   isActive ? 'text-purple-300 font-semibold' : 'text-slate-400'
                 }`}
               >
-                {isActive ? 'Active Line' : creatorLabel}
+                {isActive ? t('timeline_active') : creatorLabel}
               </div>
             </div>
           );
@@ -572,11 +574,11 @@ export const MultiverseViewport: React.FC<MultiverseViewportProps> = ({
                   <div className="flex items-center gap-1">
                     {hasLegalTargetsOnBoard && !pStatus.isCurrentPlayerTurnOnBoard ? (
                       <span className="text-[9px] font-bold text-purple-300 tracking-tight">
-                        TIME TARGET
+                        {t('badge_time_target')}
                       </span>
                     ) : pStatus.isMandatoryPresent ? (
                       <span className="text-[9px] font-bold text-amber-300 tracking-tight">
-                        PLAYABLE · PRESENT
+                        {t('badge_playable_present')}
                       </span>
                     ) : pStatus.isOptionalPlayable ? (
                       <span
@@ -584,33 +586,33 @@ export const MultiverseViewport: React.FC<MultiverseViewportProps> = ({
                           pStatus.isTimelineActive ? 'text-emerald-300' : 'text-purple-300'
                         }`}
                       >
-                        {pStatus.statusLabel}
+                        {t(pStatus.statusLabel as any)}
                       </span>
                     ) : pStatus.isStagedResultThisTurn ? (
                       <div className="flex items-center gap-1">
                         <span className="text-[9px] font-bold text-sky-300">
-                          STAGED
+                          {t('badge_staged')}
                         </span>
                         <button
                           type="button"
                           onClick={onUndoStaged}
                           className="px-1 py-0.2 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/40 text-[9px] font-bold cursor-pointer"
-                          title="Undo staged move"
+                          title={t('undoStagedMoveTitle')}
                         >
-                          Undo
+                          {t('undo')}
                         </button>
                       </div>
                     ) : pStatus.isStagedOriginThisTurn ? (
                       <span className="text-[9px] font-semibold text-amber-300/90">
-                        MOVED · REVISE
+                        {t('badge_moved_revise')}
                       </span>
                     ) : pStatus.isPlayableBoard ? (
                       <span className="text-[9px] font-semibold text-slate-300">
-                        {pStatus.statusLabel}
+                        {t(pStatus.statusLabel as any)}
                       </span>
                     ) : (
                       <span className="text-[9px] text-slate-400">
-                        HISTORY
+                        {t('badge_history')}
                       </span>
                     )}
                   </div>
@@ -650,12 +652,12 @@ export const MultiverseViewport: React.FC<MultiverseViewportProps> = ({
                         // Accessible label for browser snapshot & screen readers
                         const squareName = formatSquare(x, y);
                         const pieceDesc = piece
-                          ? `${piece.color === 'w' ? 'White' : 'Black'} ${PIECE_NAMES[piece.type]}`
-                          : 'Empty';
+                          ? `${piece.color === 'w' ? t('white') : t('black')} ${t(('piece_' + piece.type) as any)}`
+                          : t('emptySquare');
                         const targetDesc = legalMove
                           ? legalMove.kind === 'spatial'
-                            ? ' · Legal Spatial Move'
-                            : ' · Legal Time Travel Target'
+                            ? t('legalSpatialMove')
+                            : t('legalTimeTravelTarget')
                           : '';
 
                         return (
@@ -880,7 +882,7 @@ export const MultiverseViewport: React.FC<MultiverseViewportProps> = ({
         <button
           type="button"
           onClick={() => setZoom((z) => Math.max(0.55, Number((z - 0.15).toFixed(2))))}
-          aria-label="Zoom Out Multiverse"
+          aria-label={t('zoomOut')}
           className="px-2.5 py-1 text-xs font-mono font-semibold text-slate-300 hover:text-white hover:bg-slate-800 rounded cursor-pointer"
         >
           -
@@ -891,7 +893,7 @@ export const MultiverseViewport: React.FC<MultiverseViewportProps> = ({
         <button
           type="button"
           onClick={() => setZoom((z) => Math.min(1.5, Number((z + 0.15).toFixed(2))))}
-          aria-label="Zoom In Multiverse"
+          aria-label={t('zoomIn')}
           className="px-2.5 py-1 text-xs font-mono font-semibold text-slate-300 hover:text-white hover:bg-slate-800 rounded cursor-pointer"
         >
           +
@@ -914,7 +916,7 @@ export const MultiverseViewport: React.FC<MultiverseViewportProps> = ({
           }}
           className="px-2.5 py-1 text-xs font-mono text-amber-300 hover:bg-slate-800 rounded cursor-pointer whitespace-nowrap"
         >
-          Center on Present
+          {t('centerOnPresent')}
         </button>
       </div>
     </div>

@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { OpponentMode, VariantId } from '../game/types';
 import { VARIANT_CONFIGS } from '../game/engine';
 import { ChessPieceSVG } from './ChessPieceSVG';
+import { LocaleSwitcher } from './LocaleSwitcher';
+import { useI18n } from '../i18n';
 
 interface TitleScreenProps {
   selectedVariant: VariantId;
@@ -19,6 +21,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
   onStartGame,
 }) => {
   const [parallax, setParallax] = useState({ x: 0, y: 0 });
+  const { t } = useI18n();
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -224,23 +227,19 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                 fontSize="14.5"
                 letterSpacing="4.5"
               >
-                WITH MULTIVERSE TIME TRAVEL
+                {t('titleTagline')}
               </text>
             </svg>
           </div>
 
           <p className="text-slate-300 text-base leading-relaxed mb-6 max-w-[56ch]">
-            Every piece moves across four axes: <strong className="text-white font-semibold">File (X)</strong>,{' '}
-            <strong className="text-white font-semibold">Rank (Y)</strong>,{' '}
-            <strong className="text-amber-300 font-semibold">Turn Time (T)</strong>, and{' '}
-            <strong className="text-purple-300 font-semibold">Parallel Timelines (L)</strong>. Leap into the past to
-            branch new timelines, evade present threats, or deliver retrocausal checkmate.
+            {t('titleOverview')}
           </p>
 
           {/* Opponent Mode Selector */}
           <div className="mb-6">
             <div className="text-xs font-mono text-slate-400 mb-2 tracking-wider">
-              OPPONENT CONFIGURATION
+              {t('opponentConfig')}
             </div>
             <div className="inline-flex p-1 bg-slate-900/90 border border-slate-800 rounded-lg gap-1">
               <button
@@ -252,7 +251,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                     : 'text-slate-300 hover:text-white'
                 }`}
               >
-                vs AI Chronomancer
+                {t('vsAi')}
               </button>
               <button
                 type="button"
@@ -263,7 +262,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                     : 'text-slate-300 hover:text-white'
                 }`}
               >
-                2P Pass &amp; Play
+                {t('passPlay')}
               </button>
             </div>
           </div>
@@ -279,13 +278,18 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
               }}
               className="px-8 py-4 bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-slate-950 font-display font-bold text-lg tracking-wider rounded-lg shadow-[0_0_25px_rgba(245,158,11,0.35)] transition-all cursor-pointer whitespace-nowrap shrink-0"
             >
-              Start Game
+              {t('startGame')}
             </button>
 
             <div className="text-xs text-slate-400 font-mono">
-              <div>Selected: <span className="text-slate-200 font-semibold">{currentVariantObj.name}</span></div>
-              <div>Board Grid: <span className="text-amber-400">{currentVariantObj.boardSize}×{currentVariantObj.boardSize}</span> · 4D Vectors Enabled</div>
+              <div>{t('selected')} <span className="text-slate-200 font-semibold">{t(currentVariantObj.name as any)}</span></div>
+              <div>{t('boardGrid')} <span className="text-amber-400">{currentVariantObj.boardSize}×{currentVariantObj.boardSize}</span> · {t('vectorsEnabled')}</div>
             </div>
+          </div>
+
+          {/* Locale Switcher */}
+          <div className="mt-6">
+            <LocaleSwitcher />
           </div>
         </div>
 
@@ -294,9 +298,9 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
           <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-5 shadow-2xl">
             <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-800">
               <h2 className="font-display text-base font-bold tracking-wide text-slate-100">
-                Select Spacetime Ruleset or Puzzle
+                {t('selectRuleset')}
               </h2>
-              <span className="text-xs font-mono text-slate-400">6 Modes</span>
+              <span className="text-xs font-mono text-slate-400">{VARIANT_CONFIGS.length} {t('modes')}</span>
             </div>
 
             <div className="grid grid-cols-1 gap-2.5 max-h-[380px] overflow-y-auto pr-1">
@@ -316,17 +320,17 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="font-semibold text-sm text-slate-100">
-                          {variant.name}
+                          {t(variant.name as any)}
                         </span>
                         <span className="text-xs font-mono text-slate-400">
                           · {variant.boardSize}×{variant.boardSize}
                         </span>
                       </div>
                       <div className="text-xs text-amber-400/90 font-medium mt-0.5">
-                        {variant.subtitle}
+                        {t(variant.subtitle as any)}
                       </div>
                       <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-                        {variant.description}
+                        {t(variant.description as any)}
                       </p>
                     </div>
 
@@ -355,7 +359,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
 
       {/* Bottom Safe-Margin Control Hint Line (Flat, borderless inline line per game_title_and_hud.md) */}
       <div className="relative z-10 w-full py-4 px-6 text-center text-xs font-mono text-slate-400 tracking-wide">
-        Click Piece to Preview 4D Vectors · Click Past Board Square to Branch Timeline · Drag or Scroll to Pan Multiverse · Space Submit Turn · P Pause
+        {t('controlsHint')}
       </div>
     </div>
   );

@@ -104,6 +104,10 @@ export interface MultiverseState {
   snapshotsBeforeStaged: MultiverseState[]; // Stack for undoing staged moves within current turn
   winner: PlayerColor | 'draw' | null;
   winReason: string | null;
+  /** i18n key describing the match outcome (for translation at render time). */
+  winReasonKey?: string;
+  /** Interpolation vars for winReasonKey. */
+  winReasonVars?: Record<string, string>;
   timeJumpsCount: number;
   timelinesCreatedCount: number;
 }

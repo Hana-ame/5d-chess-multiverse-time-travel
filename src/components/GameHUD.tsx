@@ -15,7 +15,9 @@ import {
   formatTimelineLabel,
   formatTurnStep,
 } from '../game/engine';
-import { ChessPieceSVG, PIECE_AXIS_RULES, PIECE_NAMES } from './ChessPieceSVG';
+import { ChessPieceSVG } from './ChessPieceSVG';
+import { LocaleSwitcher } from './LocaleSwitcher';
+import { useI18n } from '../i18n';
 
 interface GameHUDProps {
   state: MultiverseState;
@@ -62,6 +64,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
   onChangeVariant,
   onExecuteMoveDirect,
 }) => {
+  const { t, tf } = useI18n();
   const submitStatus = canSubmitCurrentTurn(state);
   const currentVariantConfig =
     VARIANT_CONFIGS.find((v) => v.id === state.variant) ?? VARIANT_CONFIGS[0];
@@ -88,14 +91,14 @@ export const GameHUD: React.FC<GameHUDProps> = ({
             </div>
             <div>
               <div className="text-[10px] font-mono text-slate-400 tracking-wider">
-                ACTIVE TURN
+                {t('activeTurn')}
               </div>
               <div className="text-sm font-display font-bold text-slate-100 whitespace-nowrap">
                 {aiThinking
-                  ? 'AI Chronomancer Thinking...'
+                  ? t('aiThinking')
                   : state.turnColor === 'w'
-                    ? 'White to Move'
-                    : 'Black to Move'}
+                    ? t('whiteToMove')
+                    : t('blackToMove')}
               </div>
             </div>
           </div>
@@ -104,7 +107,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
           <div className="flex items-center gap-5">
             <div>
               <div className="text-[10px] font-mono text-slate-400 tracking-wider">
-                PRESENT
+                {t('present')}
               </div>
               <div className="text-lg font-mono font-bold text-amber-400 tabular-nums leading-tight">
                 {formatTurnStep(state.presentStep)}
@@ -113,7 +116,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
 
             <div>
               <div className="text-[10px] font-mono text-slate-400 tracking-wider">
-                TIMELINES
+                {t('timelines')}
               </div>
               <div className="text-lg font-mono font-bold text-slate-100 tabular-nums leading-tight">
                 {state.timelineOrder.length}
@@ -122,7 +125,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
 
             <div>
               <div className="text-[10px] font-mono text-slate-400 tracking-wider">
-                TIME JUMPS
+                {t('timeJumps')}
               </div>
               <div className="text-lg font-mono font-bold text-purple-300 tabular-nums leading-tight">
                 {state.timeJumpsCount}
@@ -134,7 +137,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
           {threats.length > 0 && (
             <div className="pl-3 border-l border-slate-800 flex items-center gap-2 text-red-400">
               <span className="text-xs font-mono font-bold tracking-wide">
-                SPACETIME CHECK ({threats.length})
+                {t('spacetimeCheck')} ({threats.length})
               </span>
             </div>
           )}
@@ -145,10 +148,10 @@ export const GameHUD: React.FC<GameHUDProps> = ({
           <div className="pointer-events-auto hidden xl:flex items-center gap-3 bg-[#1E1B4B]/95 border border-purple-500/50 rounded-xl px-4 py-2 shadow-lg">
             <div>
               <div className="text-[10px] font-mono text-purple-300 tracking-wider">
-                PUZZLE OBJECTIVE · {currentVariantConfig.name.toUpperCase()}
+                {t('puzzleObjective')} · {t(currentVariantConfig.name as any)}
               </div>
               <div className="text-xs text-slate-100 font-medium">
-                {currentVariantConfig.puzzleGoal}
+                {t(currentVariantConfig.puzzleGoal as any)}
               </div>
             </div>
           </div>
@@ -157,11 +160,11 @@ export const GameHUD: React.FC<GameHUDProps> = ({
         {/* Top-Right Utility Controls */}
         <div className="pointer-events-auto flex items-center gap-2 bg-[#0F172A]/95 border border-slate-800 rounded-xl p-1.5 shadow-xl">
           <label htmlFor="variant-select" className="sr-only">
-            Select Ruleset or Scenario
+            {t('selectRulesetAria')}
           </label>
           <select
             id="variant-select"
-            aria-label="Select Ruleset or Scenario"
+            aria-label={t('selectRulesetAria')}
             value={state.variant}
             onChange={(e) => {
               e.currentTarget.blur();
@@ -171,7 +174,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
           >
             {VARIANT_CONFIGS.map((v) => (
               <option key={v.id} value={v.id}>
-                {v.name}
+                {t(v.name as any)}
               </option>
             ))}
           </select>
@@ -189,7 +192,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
                 : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
             }`}
           >
-            Vectors: {showAllHistoryVectors ? 'All' : 'Recent'}
+            {t('vectorsLabel')} {showAllHistoryVectors ? t('all') : t('recent')}
           </button>
 
           <button
@@ -201,14 +204,17 @@ export const GameHUD: React.FC<GameHUDProps> = ({
             }}
             className="px-2.5 py-1.5 text-xs font-mono bg-slate-900 hover:bg-slate-800 text-amber-300 border border-slate-700 rounded-lg transition-colors cursor-pointer whitespace-nowrap"
           >
-            4D Guide [G]
+            {t('guide4d')}
           </button>
+
+          {/* Compact Language Switcher */}
+          <LocaleSwitcher compact />
 
           {/* Compact Square SVG Utility Buttons: Mute [M], Restart [R], Pause [P] */}
           <button
             type="button"
             tabIndex={-1}
-            aria-label={isMuted ? 'Unmute Audio [M]' : 'Mute Audio [M]'}
+            aria-label={isMuted ? t('unmuteAudio') : t('muteAudio')}
             onClick={(e) => {
               e.currentTarget.blur();
               onToggleMute();
@@ -227,7 +233,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
           <button
             type="button"
             tabIndex={-1}
-            aria-label="Restart Match [R]"
+            aria-label={t('restartMatch')}
             onClick={(e) => {
               e.currentTarget.blur();
               onRestart();
@@ -243,7 +249,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
           <button
             type="button"
             tabIndex={-1}
-            aria-label="Pause Game [P]"
+            aria-label={t('pauseGame')}
             onClick={(e) => {
               e.currentTarget.blur();
               onTogglePause();
@@ -270,7 +276,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 text-xs">
                   <span className="font-bold text-slate-100">
-                    {selectedPiece.color === 'w' ? 'White' : 'Black'} {PIECE_NAMES[selectedPiece.type]}
+                    {selectedPiece.color === 'w' ? t('white') : t('black')} {t(('piece_' + selectedPiece.type) as any)}
                   </span>
                   <span className="text-slate-500">·</span>
                   <span className="font-mono text-amber-300">
@@ -279,11 +285,11 @@ export const GameHUD: React.FC<GameHUDProps> = ({
                   </span>
                   <span className="text-slate-500">·</span>
                   <span className="font-mono text-emerald-300">
-                    {spatialMoves.length} Spatial
+                    {spatialMoves.length} {t('spatial')}
                   </span>
                   <span className="text-slate-500">·</span>
                   <span className="font-mono text-purple-300">
-                    {temporalMoves.length} Time/Multiverse
+                    {temporalMoves.length} {t('timeMultiverse')}
                   </span>
                 </div>
 
@@ -291,7 +297,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
                 {temporalMoves.length > 0 ? (
                   <div className="flex items-center gap-1.5 mt-1 overflow-x-auto pb-0.5">
                     <span className="text-[11px] font-mono text-purple-300 shrink-0">
-                      Time Jumps:
+                      {t('timeJumpsLabel')}
                     </span>
                     {temporalMoves.slice(0, 5).map((tm) => (
                       <button
@@ -300,14 +306,14 @@ export const GameHUD: React.FC<GameHUDProps> = ({
                         onClick={() => onExecuteMoveDirect(tm)}
                         className="px-2 py-0.5 text-[11px] font-mono bg-purple-950/90 hover:bg-purple-800 text-purple-100 border border-purple-500/60 rounded transition-colors cursor-pointer whitespace-nowrap shrink-0"
                       >
-                        Jump to {formatTimelineLabel(tm.to.l)} {formatTurnStep(tm.to.t)}{' '}
+                        {t('jumpTo')} {formatTimelineLabel(tm.to.l)} {formatTurnStep(tm.to.t)}{' '}
                         {formatSquare(tm.to.x, tm.to.y)}
                       </button>
                     ))}
                   </div>
                 ) : (
                   <div className="text-[11px] text-slate-400 truncate mt-0.5">
-                    {PIECE_AXIS_RULES[selectedPiece.type]}
+                    {t(('axis_' + selectedPiece.type) as any)}
                   </div>
                 )}
               </div>
@@ -316,11 +322,11 @@ export const GameHUD: React.FC<GameHUDProps> = ({
             <div className="text-xs text-slate-300">
               <div className="font-semibold text-slate-100">
                 {submitStatus.canSubmit
-                  ? 'All Present timelines satisfied — Ready to Submit Turn'
-                  : submitStatus.reason}
+                  ? t('readyToSubmit')
+                  : tf(submitStatus.reason as any, submitStatus.reasonVars)}
               </div>
               <div className="text-[11px] text-slate-400 mt-0.5">
-                Select any {state.turnColor === 'w' ? 'White' : 'Black'} piece on a highlighted leaf board to inspect 4D spatial and temporal destinations.
+                {tf('selectPieceHint', { color: state.turnColor === 'w' ? t('white') : t('black') })}
               </div>
             </div>
           )}
@@ -330,7 +336,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
         <div className="flex items-center gap-2.5 shrink-0">
           {state.stagedMoves.length > 0 && (
             <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 bg-slate-900 border border-slate-800 rounded-lg text-xs font-mono text-amber-300 max-w-[260px] truncate">
-              <span>Staged ({state.stagedMoves.length}):</span>
+              <span>{tf('stagedLabel', { count: state.stagedMoves.length })}</span>
               <span className="truncate">
                 {state.stagedMoves.map((m) => m.notation).join(', ')}
               </span>
@@ -347,7 +353,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
                 : 'bg-slate-900/50 text-slate-600 border-slate-800/60 cursor-not-allowed'
             }`}
           >
-            Undo Move
+            {t('undoMove')}
           </button>
 
           <button
@@ -360,7 +366,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
                 : 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed'
             }`}
           >
-            Submit Turn
+            {t('submitTurn')}
           </button>
         </div>
       </div>
@@ -375,34 +381,21 @@ export const GameHUD: React.FC<GameHUDProps> = ({
           >
             <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-800">
               <h2 className="font-display text-lg font-bold text-slate-100">
-                4D Spacetime Piece Movement &amp; Timeline Rules
+                {t('guideTitle')}
               </h2>
               <button
                 type="button"
                 onClick={onToggleGuideModal}
                 className="px-3 py-1 text-xs font-mono bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg cursor-pointer"
               >
-                Close [Esc]
+                {t('guideClose')}
               </button>
             </div>
 
             <div className="space-y-3 text-xs text-slate-300 leading-relaxed mb-5">
-              <p>
-                <strong className="text-amber-300">1. The 4 Axes (X, Y, T, L):</strong> Standard chess uses two spatial
-                axes: File (X) and Rank (Y). 5D Chess adds <strong className="text-white">Turn Time (T)</strong>{' '}
-                (horizontal columns) and <strong className="text-purple-300">Timelines (L)</strong> (vertical rows).
-              </p>
-              <p>
-                <strong className="text-amber-300">2. Branching the Multiverse:</strong> When a piece moves to a
-                historical board in the past, it vacates its origin board and branches a brand new parallel timeline
-                (<span className="font-mono text-purple-300">+L1, +L2</span> for White;{' '}
-                <span className="font-mono text-sky-300">-L1, -L2</span> for Black).
-              </p>
-              <p>
-                <strong className="text-amber-300">3. Advancing The Present:</strong> The luminous gold column marks{' '}
-                <strong className="text-white">The Present</strong>. You must make a move on every active timeline board
-                in The Present before clicking <strong className="text-amber-300">Submit Turn</strong>.
-              </p>
+              <p>{t('guideP1')}</p>
+              <p>{t('guideP2')}</p>
+              <p>{t('guideP3')}</p>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-[280px] overflow-y-auto pr-1">
@@ -413,9 +406,9 @@ export const GameHUD: React.FC<GameHUDProps> = ({
                 >
                   <ChessPieceSVG type={pt} color="w" className="w-7 h-7 shrink-0 mt-0.5" />
                   <div>
-                    <div className="text-xs font-bold text-slate-100">{PIECE_NAMES[pt]}</div>
+                    <div className="text-xs font-bold text-slate-100">{t(('piece_' + pt) as any)}</div>
                     <div className="text-[11px] text-slate-400 mt-0.5 leading-snug">
-                      {PIECE_AXIS_RULES[pt]}
+                      {t(('axis_' + pt) as any)}
                     </div>
                   </div>
                 </div>
@@ -434,28 +427,28 @@ export const GameHUD: React.FC<GameHUDProps> = ({
             className="bg-[#0F172A] border border-slate-700 rounded-2xl max-w-md w-full p-6 shadow-2xl text-center"
           >
             <h2 className="font-display text-2xl font-bold text-slate-100 tracking-wide mb-1">
-              Spacetime Paused
+              {t('pausedTitle')}
             </h2>
             <p className="text-xs font-mono text-slate-400 mb-6">
-              {currentVariantConfig.name} · Turn {Math.floor(state.presentStep / 2) + 1}
+              {t(currentVariantConfig.name as any)} · {t('turnLabel')} {Math.floor(state.presentStep / 2) + 1}
             </p>
 
             {/* 3 Tabular Stat Tiles */}
             <div className="grid grid-cols-3 gap-2.5 mb-6">
               <div className="bg-slate-900 border border-slate-800 rounded-lg p-3">
-                <div className="text-[10px] font-mono text-slate-400">PRESENT</div>
+                <div className="text-[10px] font-mono text-slate-400">{t('present')}</div>
                 <div className="text-lg font-mono font-bold text-amber-400 tabular-nums mt-0.5">
                   {formatTurnStep(state.presentStep)}
                 </div>
               </div>
               <div className="bg-slate-900 border border-slate-800 rounded-lg p-3">
-                <div className="text-[10px] font-mono text-slate-400">TIMELINES</div>
+                <div className="text-[10px] font-mono text-slate-400">{t('timelines')}</div>
                 <div className="text-lg font-mono font-bold text-slate-100 tabular-nums mt-0.5">
                   {state.timelineOrder.length}
                 </div>
               </div>
               <div className="bg-slate-900 border border-slate-800 rounded-lg p-3">
-                <div className="text-[10px] font-mono text-slate-400">TIME JUMPS</div>
+                <div className="text-[10px] font-mono text-slate-400">{t('timeJumps')}</div>
                 <div className="text-lg font-mono font-bold text-purple-300 tabular-nums mt-0.5">
                   {state.timeJumpsCount}
                 </div>
@@ -468,21 +461,21 @@ export const GameHUD: React.FC<GameHUDProps> = ({
                 onClick={onTogglePause}
                 className="w-full py-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-display font-bold text-sm tracking-wider rounded-lg transition-colors cursor-pointer"
               >
-                Resume Game
+                {t('resumeGame')}
               </button>
               <button
                 type="button"
                 onClick={onRestart}
                 className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-100 font-medium text-xs rounded-lg border border-slate-700 transition-colors cursor-pointer"
               >
-                Restart Match
+                {t('restartMatch')}
               </button>
               <button
                 type="button"
                 onClick={onReturnToTitle}
                 className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-slate-300 font-medium text-xs rounded-lg border border-slate-800 transition-colors cursor-pointer"
               >
-                Title Screen
+                {t('titleScreen')}
               </button>
             </div>
           </div>
@@ -498,35 +491,37 @@ export const GameHUD: React.FC<GameHUDProps> = ({
             className="bg-[#0F172A] border border-amber-500/60 rounded-2xl max-w-md w-full p-6 shadow-2xl text-center"
           >
             <div className="text-xs font-mono text-amber-400 tracking-widest mb-1">
-              MULTIVERSE RESOLUTION
+              {t('multiverseResolution')}
             </div>
             <h2 className="font-display text-2xl font-bold text-slate-100 tracking-wide mb-2">
               {state.winner === 'w'
-                ? 'White Triumphs Across Time'
+                ? t('whiteTriumphs')
                 : state.winner === 'b'
-                  ? 'Black Triumphs Across Time'
-                  : 'Multiverse Stalemate'}
+                  ? t('blackTriumphs')
+                  : t('stalemate')}
             </h2>
             <p className="text-xs text-slate-300 mb-6 leading-relaxed">
-              {state.winReason ?? 'All spacetime timelines have reached finality.'}
+              {state.winReasonKey
+                ? tf(state.winReasonKey as any, state.winReasonVars)
+                : state.winReason ?? t('win_default')}
             </p>
 
             {/* 3 Tabular Mastery Metric Tiles */}
             <div className="grid grid-cols-3 gap-2.5 mb-6">
               <div className="bg-slate-900 border border-slate-800 rounded-lg p-3">
-                <div className="text-[10px] font-mono text-slate-400">TIMELINES</div>
+                <div className="text-[10px] font-mono text-slate-400">{t('timelines')}</div>
                 <div className="text-lg font-mono font-bold text-amber-400 tabular-nums mt-0.5">
                   {state.timelinesCreatedCount}
                 </div>
               </div>
               <div className="bg-slate-900 border border-slate-800 rounded-lg p-3">
-                <div className="text-[10px] font-mono text-slate-400">TIME JUMPS</div>
+                <div className="text-[10px] font-mono text-slate-400">{t('timeJumps')}</div>
                 <div className="text-lg font-mono font-bold text-purple-300 tabular-nums mt-0.5">
                   {state.timeJumpsCount}
                 </div>
               </div>
               <div className="bg-slate-900 border border-slate-800 rounded-lg p-3">
-                <div className="text-[10px] font-mono text-slate-400">TURNS</div>
+                <div className="text-[10px] font-mono text-slate-400">{t('turns')}</div>
                 <div className="text-lg font-mono font-bold text-slate-100 tabular-nums mt-0.5">
                   {state.turnCount}
                 </div>
@@ -540,14 +535,14 @@ export const GameHUD: React.FC<GameHUDProps> = ({
                 onClick={onRestart}
                 className="w-full py-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-display font-bold text-sm tracking-wider rounded-lg transition-colors cursor-pointer"
               >
-                Play Again
+                {t('playAgain')}
               </button>
               <button
                 type="button"
                 onClick={onReturnToTitle}
                 className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-slate-300 font-medium text-xs rounded-lg border border-slate-800 transition-colors cursor-pointer"
               >
-                Title Screen
+                {t('titleScreen')}
               </button>
             </div>
           </div>

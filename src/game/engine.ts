@@ -17,55 +17,49 @@ import {
 export const VARIANT_CONFIGS: VariantConfig[] = [
   {
     id: 'tactical_5x5',
-    name: '5×5 Tactical Multiverse',
-    subtitle: 'Fast Action · Immediate Time Jumps',
-    description:
-      'Compact 5×5 boards where pieces reach temporal launch vectors by Turn 2. Ideal for rapid multiverse branching and cross-timeline tactics.',
+    name: 'variant_tactical_5x5',
+    subtitle: 'variantSub_tactical_5x5',
+    description: 'variantDesc_tactical_5x5',
     boardSize: 5,
   },
   {
     id: 'standard_8x8',
-    name: '8×8 Standard 5D Chess',
-    subtitle: 'Full FIDE + 4D Spacetime Rules',
-    description:
-      'Classic 8×8 chess expanded across Time (T) and Parallel Timelines (L). Every piece generalizes its movement across 4 axes.',
+    name: 'variant_standard_8x8',
+    subtitle: 'variantSub_standard_8x8',
+    description: 'variantDesc_standard_8x8',
     boardSize: 8,
   },
   {
     id: 'time_lab',
-    name: 'Temporal Sandbox Lab',
-    subtitle: 'Pre-History Loaded · Ready to Time Travel',
-    description:
-      'Starts at Turn 3 with open lanes and Queens, Rooks, Knights, and Bishops poised to leap backward in time or across timelines immediately.',
+    name: 'variant_time_lab',
+    subtitle: 'variantSub_time_lab',
+    description: 'variantDesc_time_lab',
     boardSize: 5,
   },
   {
     id: 'royal_unicorn',
-    name: 'Unicorn & Dragon Court',
-    subtitle: 'Includes 3D Triagonal & 4D Quadragonal Pieces',
-    description:
-      'Features the authentic 5D Chess Unicorn (moves equally along 3 axes) and Dragon (moves equally along all 4 axes) alongside standard pieces.',
+    name: 'variant_royal_unicorn',
+    subtitle: 'variantSub_royal_unicorn',
+    description: 'variantDesc_royal_unicorn',
     boardSize: 6,
   },
   {
     id: 'puzzle_retrocausal',
-    name: 'Puzzle I: Retrocausal Strike',
-    subtitle: 'Checkmate the Past King in 1 Turn',
-    description:
-      'Black’s present King is heavily guarded, but Black’s past King on Turn 1 is exposed to a temporal Rook or Bishop vector. Find the winning time attack!',
+    name: 'variant_puzzle_retrocausal',
+    subtitle: 'variantSub_puzzle_retrocausal',
+    description: 'variantDesc_puzzle_retrocausal',
     boardSize: 5,
     isPuzzle: true,
-    puzzleGoal: 'Attack Black’s vulnerable King across spacetime or deliver checkmate.',
+    puzzleGoal: 'puzzleGoal_puzzle_retrocausal',
   },
   {
     id: 'puzzle_multiverse_fork',
-    name: 'Puzzle II: Multiverse Fork',
-    subtitle: 'Branch Timeline +1 & Double-Threaten',
-    description:
-      'Jump your Queen or Knight back in time to spawn Timeline +1 while creating an unstoppable cross-timeline fork.',
+    name: 'variant_puzzle_multiverse_fork',
+    subtitle: 'variantSub_puzzle_multiverse_fork',
+    description: 'variantDesc_puzzle_multiverse_fork',
     boardSize: 5,
     isPuzzle: true,
-    puzzleGoal: 'Execute a time-travel move to branch Timeline +1 and check Black.',
+    puzzleGoal: 'puzzleGoal_puzzle_multiverse_fork',
   },
 ];
 
@@ -521,19 +515,19 @@ export function getBoardPlayableStatus(
         state.stagedMoves.some((m) => m.id === board.spawnedByMoveId)
     );
 
-  let statusLabel = 'UNPLAYABLE · HISTORY';
+  let statusLabel = 'status_unplayable_history';
   if (isMandatoryPresent) {
-    statusLabel = 'PLAYABLE · PRESENT';
+    statusLabel = 'status_playable_present';
   } else if (isOptionalPlayable && isTimelineActive) {
-    statusLabel = 'PLAYABLE · OPTIONAL';
+    statusLabel = 'status_playable_optional';
   } else if (isOptionalPlayable && !isTimelineActive) {
-    statusLabel = 'PLAYABLE · INACTIVE';
+    statusLabel = 'status_playable_inactive';
   } else if (isStagedResultThisTurn) {
-    statusLabel = 'STAGED · SUBMIT TURN';
+    statusLabel = 'status_staged_submit';
   } else if (isPlayableBoard) {
-    statusLabel = boardColor === 'w' ? 'PLAYABLE · WHITE' : 'PLAYABLE · BLACK';
+    statusLabel = boardColor === 'w' ? 'status_playable_white' : 'status_playable_black';
   } else if (isStagedOriginThisTurn) {
-    statusLabel = 'STAGED · CLICK TO REVISE';
+    statusLabel = 'status_staged_revise';
   }
 
   return {
@@ -588,10 +582,11 @@ export function getPlayableBoards(
 export function canSubmitCurrentTurn(state: MultiverseState): {
   canSubmit: boolean;
   reason?: string;
+  reasonVars?: Record<string, string>;
   remainingMandatoryBoards: BoardState[];
 } {
   if (state.winner) {
-    return { canSubmit: false, reason: 'Match has already concluded.', remainingMandatoryBoards: [] };
+    return { canSubmit: false, reason: 'reason_concluded', remainingMandatoryBoards: [] };
   }
 
   const playable = getPlayableBoards(state, state.turnColor);
@@ -601,7 +596,8 @@ export function canSubmitCurrentTurn(state: MultiverseState): {
     const names = mandatory.map((b) => `${formatTimelineLabel(b.l)} (${formatTurnStep(b.t)})`).join(', ');
     return {
       canSubmit: false,
-      reason: `Move required on Present board(s): ${names}`,
+      reason: 'reason_move_required',
+      reasonVars: { names },
       remainingMandatoryBoards: mandatory,
     };
   }
@@ -609,7 +605,7 @@ export function canSubmitCurrentTurn(state: MultiverseState): {
   if (state.stagedMoves.length === 0) {
     return {
       canSubmit: false,
-      reason: 'Make at least one move before submitting turn.',
+      reason: 'reason_no_move',
       remainingMandatoryBoards: [],
     };
   }
@@ -619,7 +615,7 @@ export function canSubmitCurrentTurn(state: MultiverseState): {
   if (threatsOnFriendly.length > 0) {
     return {
       canSubmit: false,
-      reason: 'Your King is under spacetime check! Resolve or evade the threat first.',
+      reason: 'reason_king_check',
       remainingMandatoryBoards: [],
     };
   }
@@ -1211,7 +1207,8 @@ export function applyStagedMovePure(state: MultiverseState, move: Move5D): Multi
   // Check if any enemy King was directly captured (in puzzles or variants)
   if (move.captured?.type === 'k') {
     next.winner = state.turnColor;
-    next.winReason = `Captured ${move.captured.color === 'w' ? 'White' : 'Black'}'s Royal King across spacetime!`;
+    next.winReasonKey = 'win_captured_king';
+    next.winReasonVars = { color: move.captured.color === 'w' ? 'White' : 'Black' };
   }
 
   return next;
@@ -1253,14 +1250,14 @@ export function submitTurnPure(state: MultiverseState): MultiverseState {
     const threats = findThreatsToColorKings(next, 'b');
     if (threats.some((t) => t.isCrossTimeline)) {
       next.winner = 'w';
-      next.winReason = 'Retrocausal Strike Complete! You attacked Black’s past King across time.';
+      next.winReasonKey = 'win_retrocausal';
       return next;
     }
   }
   if (next.variant === 'puzzle_multiverse_fork' && state.turnColor === 'w') {
     if (next.timelinesCreatedCount >= 2) {
       next.winner = 'w';
-      next.winReason = 'Multiverse Fork Complete! Timeline +L1 spawned successfully.';
+      next.winReasonKey = 'win_multiverse_fork';
       return next;
     }
   }
@@ -1289,10 +1286,11 @@ export function submitTurnPure(state: MultiverseState): MultiverseState {
     const threats = findThreatsToColorKings(next, next.turnColor);
     if (threats.length > 0) {
       next.winner = state.turnColor;
-      next.winReason = `Multiverse Checkmate! ${state.turnColor === 'w' ? 'White' : 'Black'} wins across spacetime.`;
+      next.winReasonKey = 'win_checkmate';
+      next.winReasonVars = { color: state.turnColor === 'w' ? 'White' : 'Black' };
     } else {
       next.winner = 'draw';
-      next.winReason = 'Multiverse Stalemate — no legal spacetime moves remain.';
+      next.winReasonKey = 'win_stalemate';
     }
   }
 
@@ -1422,10 +1420,11 @@ export function computeAITurn(state: MultiverseState): MultiverseState {
       const threats = findThreatsToColorKings(working, working.turnColor);
       if (threats.length > 0) {
         working.winner = working.turnColor === 'w' ? 'b' : 'w';
-        working.winReason = `Multiverse Checkmate! ${working.winner === 'w' ? 'White' : 'Black'} wins.`;
+        working.winReasonKey = 'win_checkmate_short';
+        working.winReasonVars = { color: working.winner === 'w' ? 'White' : 'Black' };
       } else {
         working.winner = 'draw';
-        working.winReason = 'Stalemate across spacetime.';
+        working.winReasonKey = 'win_stalemate_short';
       }
       return working;
     }
