@@ -2,11 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   applyStagedMovePure,
+  canSubmitCurrentTurn,
   computeAITurn,
   createInitialMultiverse,
+  findActiveAndImpendingThreats,
   findThreatsToColorKings,
   getLegalMovesForSquare,
   getPlayableBoards,
+  hasAnyLegalTurnMove,
   submitTurnPure,
 } from './engine';
 
@@ -14,12 +17,11 @@ import {
  * REGRESSION: A move that leaves ANY of the mover's kings in check must be illegal,
  * even when the check is on a board that is NOT the current move's resulting board.
  *
- * The old self-check filter in getLegalMovesForSquare only inspected threats touching
- * the move's resultingSourceBoard / resultingTargetBoard. A king in check on a third
- * board was silently ignored, so the engine allowed a move that left the mover in
- * check elsewhere — which then blocked canSubmitCurrentTurn and hung the game.
+ * Furthermore, whenever a match concludes via checkmate or stalemate, the incoming player
+ * must truly have zero valid turn completions (`hasAnyLegalTurnMove === false`), and
+ * checkmate must be backed by at least one active or impending threat vector.
  */
-test('no legal move may leave the mover in check on any board (non-resulting boards included)', () => {
+test('no legal move may leave the mover in check on any board (non-resulting boards included) and all checkmates/stalemates are genuine', () => {
   function mulberry32(seed: number) {
     let a = seed >>> 0;
     return function () {
@@ -30,7 +32,7 @@ test('no legal move may leave the mover in check on any board (non-resulting boa
     };
   }
 
-  for (const variant of ['tactical_5x5', 'time_lab', 'standard_8x8'] as const) {
+  for (const variant of ['tactical_5x5', 'time_lab', 'standard_8x8', 'royal_unicorn'] as const) {
     const rng = mulberry32(4);
     let state = createInitialMultiverse(variant, 'ai');
     let guard = 0;
@@ -60,12 +62,28 @@ test('no legal move may leave the mover in check on any board (non-resulting boa
         `${variant}: a legal move left the mover (${moverColor}) in check on a non-resulting board. Threats: ` +
           stillInCheck.map((t) => `${t.from.l},${t.from.t}->${t.to.l},${t.to.t}`).join('; ')
       );
-      state = submitTurnPure(state);
+      if (canSubmitCurrentTurn(state).canSubmit) {
+        state = submitTurnPure(state);
+      }
       if (state.winner) break;
       if (state.turnColor === 'b') {
         state = computeAITurn(state);
       }
       if (state.winner) break;
+    }
+
+    if (state.winner && state.checkmateForensics?.kind !== 'king_captured') {
+      assert.equal(
+        hasAnyLegalTurnMove(state, state.turnColor),
+        false,
+        `${variant}: game ended with winner=${state.winner}, but ${state.turnColor} still had a legal turn move!`
+      );
+      const threatsOnVictim = findActiveAndImpendingThreats(state, state.turnColor);
+      if (state.winner === 'draw') {
+        assert.equal(threatsOnVictim.length, 0, `${variant}: stalemate declared while victim was in check`);
+      } else {
+        assert.ok(threatsOnVictim.length > 0, `${variant}: checkmate declared without any active or impending threat`);
+      }
     }
   }
 });

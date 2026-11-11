@@ -243,6 +243,26 @@ export const MultiverseViewport: React.FC<MultiverseViewportProps> = ({
     return set;
   }, [allVisibleThreats]);
 
+  const threatenedBoardsSet = useMemo(() => {
+    const set = new Set<string>();
+    for (const th of allVisibleThreats) {
+      set.add(`${th.to.l}_${th.to.t}`);
+    }
+    return set;
+  }, [allVisibleThreats]);
+
+  const stagedSquaresSet = useMemo(() => {
+    const set = new Set<string>();
+    for (const m of state.stagedMoves) {
+      set.add(`${m.from.l}_${m.from.t}_${m.from.x}_${m.from.y}`);
+      set.add(`${m.resultingSourceBoard.l}_${m.resultingSourceBoard.t}_${m.to.x}_${m.to.y}`);
+      if (m.resultingTargetBoard) {
+        set.add(`${m.resultingTargetBoard.l}_${m.resultingTargetBoard.t}_${m.to.x}_${m.to.y}`);
+      }
+    }
+    return set;
+  }, [state.stagedMoves]);
+
   const attackerSquaresSet = useMemo(() => {
     const set = new Set<string>();
     for (const th of allVisibleThreats) {
@@ -784,6 +804,11 @@ export const MultiverseViewport: React.FC<MultiverseViewportProps> = ({
                   </div>
 
                   <div className="flex items-center gap-1">
+                    {threatenedBoardsSet.has(`${board.l}_${board.t}`) && (
+                      <span className="px-1 py-0.2 rounded bg-red-600/90 text-white font-mono text-[8px] font-bold tracking-tight animate-pulse">
+                        CHECK · 将军
+                      </span>
+                    )}
                     {hasLegalTargetsOnBoard && !pStatus.isCurrentPlayerTurnOnBoard ? (
                       <span className="text-[9px] font-bold text-purple-300 tracking-tight">
                         TIME TARGET
@@ -1295,6 +1320,32 @@ export const MultiverseViewport: React.FC<MultiverseViewportProps> = ({
           className="px-2.5 py-1 text-xs font-mono text-amber-300 hover:bg-slate-800 rounded cursor-pointer whitespace-nowrap"
         >
           {i18nT('centerOnPresent')}
+        </button>
+        <div className="w-px h-4 bg-slate-800 mx-0.5" />
+        <button
+          type="button"
+          onClick={() => {
+            const el = containerRef.current;
+            if (!el) return;
+            const rect = el.getBoundingClientRect();
+            const worldW = (maxStep + 1) * colPitch + 180;
+            const worldH = sortedRowsDesc.length * rowPitch + 160;
+            const fitZ = Math.min(
+              1.15,
+              Math.max(0.55, Number(Math.min((rect.width - 120) / worldW, (rect.height - 160) / worldH).toFixed(2)))
+            );
+            setZoom(fitZ);
+            const midX = ((maxStep + 1) * colPitch - colGap) / 2;
+            const midY = (sortedRowsDesc.length * rowPitch - rowGap) / 2;
+            setPan({
+              x: Math.round(rect.width * 0.5 - midX * fitZ),
+              y: Math.round(rect.height * 0.48 - midY * fitZ),
+            });
+          }}
+          className="px-2.5 py-1 text-xs font-mono text-purple-300 hover:bg-slate-800 rounded cursor-pointer whitespace-nowrap"
+          title="缩放以总览全部平行时间线 · Fit entire multiverse in view"
+        >
+          全景 · Fit All
         </button>
         {allVisibleThreats.length > 0 && (
           <>

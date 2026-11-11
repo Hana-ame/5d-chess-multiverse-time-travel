@@ -423,7 +423,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
 
         {/* Right Column: Spacetime Variant & Puzzle Selector */}
         <div className="w-full lg:w-[470px] flex flex-col justify-center">
-          <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-5 shadow-2xl">
+          <div className="hud-glass border border-slate-700/80 rounded-2xl p-5 shadow-2xl">
             <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-800">
               <h2 className="font-display text-base font-bold tracking-wide text-slate-100">
                 {t('selectRuleset')}
@@ -446,12 +446,21 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                     }`}
                   >
                     <div className="min-w-0">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-semibold text-sm text-slate-100">
                           {t(('variant_' + variant.id))}
                         </span>
                         <span className="text-xs font-mono text-slate-400">
                           · {variant.boardSize}×{variant.boardSize}
+                        </span>
+                        <span
+                          className={`px-1.5 py-0.2 rounded text-[9px] font-mono font-bold ${
+                            variant.isPuzzle
+                              ? 'bg-purple-950/90 text-purple-200 border border-purple-500/50'
+                              : 'bg-emerald-950/80 text-emerald-300 border border-emerald-500/40'
+                          }`}
+                        >
+                          {variant.isPuzzle ? 'PUZZLE · 残局' : 'MATCH · 对局'}
                         </span>
                       </div>
                       <div className="text-xs text-amber-400/90 font-medium mt-0.5">

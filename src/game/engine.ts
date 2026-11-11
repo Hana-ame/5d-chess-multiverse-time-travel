@@ -185,16 +185,9 @@ export function cloneMultiverseState(state: MultiverseState, includeSnapshots = 
       axisDelta: { ...m.axisDelta },
     })),
     moveHistory: state.moveHistory.map((turn) => turn.map((m) => ({ ...m }))),
-    turnSnapshots: includeSnapshots
-      ? (state.turnSnapshots ?? []).map((s) => cloneMultiverseState(s, false))
-      : [...(state.turnSnapshots ?? [])],
-    snapshotsBeforeStaged: includeSnapshots
-      ? state.snapshotsBeforeStaged.map((s) => cloneMultiverseState(s, false))
-      : [],
-    lastTurnSnapshot:
-      includeSnapshots && state.lastTurnSnapshot
-        ? cloneMultiverseState(state.lastTurnSnapshot, false)
-        : state.lastTurnSnapshot ?? null,
+    turnSnapshots: [...(state.turnSnapshots ?? [])],
+    snapshotsBeforeStaged: includeSnapshots ? [...state.snapshotsBeforeStaged] : [],
+    lastTurnSnapshot: state.lastTurnSnapshot ?? null,
     checkmateForensics: state.checkmateForensics
       ? {
           ...state.checkmateForensics,
@@ -620,7 +613,12 @@ export function setRulesConfigPure(
  */
 export function getBoard(state: MultiverseState, l: number, t: number): BoardState | undefined {
   const tl = state.timelines[l];
-  if (!tl) return undefined;
+  if (!tl || tl.boards.length === 0) return undefined;
+  const firstT = tl.boards[0].t;
+  const idx = t - firstT;
+  if (idx >= 0 && idx < tl.boards.length && tl.boards[idx].t === t) {
+    return tl.boards[idx];
+  }
   return tl.boards.find((b) => b.t === t);
 }
 
@@ -1037,9 +1035,95 @@ function isSquareSpatiallyAttackedOnBoard(
 }
 
 /**
+ * Checks whether a square `(l, t, targetX, targetY)` is attacked across timelines (`dl !== 0` or `dt !== 0`)
+ * by `byColor` from any leaf board in `state`, used so Kings cannot castle out of or through 5D check.
+ */
+function isSquareCrossSpacetimeAttacked(
+  state: MultiverseState,
+  targetL: number,
+  targetT: number,
+  targetX: number,
+  targetY: number,
+  byColor: PlayerColor
+): boolean {
+  for (const l of state.timelineOrder) {
+    const leaf = getLeafBoard(state, l);
+    if (!leaf) continue;
+    for (let y = 0; y < state.boardSize; y++) {
+      for (let x = 0; x < state.boardSize; x++) {
+        const piece = leaf.squares[y][x];
+        if (!piece || piece.color !== byColor) continue;
+        // Check from leaf.t (same turn parity) and leaf.t + 1 (if leaf is about to advance)
+        const candidateTList = leaf.activeColor === byColor ? [leaf.t] : [leaf.t, leaf.t + 1];
+        for (const baseT of candidateTList) {
+          if ((baseT - targetT) % 2 !== 0) continue;
+          if (leaf.l === targetL && baseT === targetT) continue;
+          const dx = targetX - x;
+          const dy = targetY - y;
+          const dt = (targetT - baseT) / 2;
+          const dl = targetL - leaf.l;
+
+          if (piece.type === 'p') {
+            const fwd = byColor === 'w' ? 1 : -1;
+            if (dx === 0 && dy === 0 && dl === fwd && Math.abs(dt) === 1) {
+              return true;
+            }
+            continue;
+          }
+          if (piece.type === 'n') {
+            const absVals = [Math.abs(dx), Math.abs(dy), Math.abs(dt), Math.abs(dl)].sort((a, b) => b - a);
+            if (absVals[0] === 2 && absVals[1] === 1 && absVals[2] === 0 && absVals[3] === 0) {
+              return true;
+            }
+            continue;
+          }
+          if (piece.type === 'k') {
+            if (Math.abs(dx) <= 1 && Math.abs(dy) <= 1 && Math.abs(dt) <= 1 && Math.abs(dl) <= 1) {
+              return true;
+            }
+            continue;
+          }
+          const nonZero = [Math.abs(dx), Math.abs(dy), Math.abs(dt), Math.abs(dl)].filter((v) => v > 0);
+          if (nonZero.length === 0) continue;
+          const stepCount = nonZero[0];
+          if (!nonZero.every((v) => v === stepCount)) continue;
+          const axesCount = nonZero.length;
+          const allowed =
+            piece.type === 'r'
+              ? axesCount === 1
+              : piece.type === 'b'
+                ? axesCount === 2
+                : piece.type === 'u'
+                  ? axesCount === 3
+                  : piece.type === 'd'
+                    ? axesCount === 4
+                    : true;
+          if (!allowed) continue;
+
+          const sx = Math.sign(dx);
+          const sy = Math.sign(dy);
+          const st = Math.sign(dt);
+          const sl = Math.sign(dl);
+          let clear = true;
+          for (let s = 1; s < stepCount; s++) {
+            const midBoard = getBoard(state, leaf.l + sl * s, baseT + st * 2 * s);
+            if (!midBoard || midBoard.squares[y + sy * s]?.[x + sx * s]) {
+              clear = false;
+              break;
+            }
+          }
+          if (clear) return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+/**
  * Generates pseudo-legal moves for a piece located at `from` on board `(from.l, from.t)`.
  * Canonical 5D Chess rules enforced:
- * - Pawn promotion is strictly Auto-Queen ('q').
+ * - Pawn promotion is strictly Auto-Queen ('q') by default (or updated via `withPromotedPiece`).
  * - Castling is strictly 2D spatial (`dt = 0, dl = 0`).
  * - En Passant is strictly single-board 2D spatial (`dt = 0, dl = 0`).
  */
@@ -1064,7 +1148,7 @@ export function getPseudoLegalMovesForPiece(
     if (targetCell && targetCell.color === piece.color) return;
 
     const kind = classifyMoveKind(state, from, to);
-    // Canonical 5D Chess: Promotion is strictly auto-Queen ('q')
+    // Canonical 5D Chess: Promotion defaults to Queen ('q')
     const isPawnPromotion =
       piece.type === 'p' &&
       ((piece.color === 'w' && to.y === size - 1) || (piece.color === 'b' && to.y === 0));
@@ -1187,13 +1271,14 @@ export function getPseudoLegalMovesForPiece(
       pushMove({ l: tl, t: tt, x: tx, y: ty }, dir.dx, dir.dy, dir.dt, dir.dl);
     }
 
-    // Strictly 2D Spatial Castling (never generalized to Time or Timeline axes)
+    // Strictly 2D Spatial Castling (never generalized to Time or Timeline axes; cannot castle out of or through 2D/5D check)
     const backRank = piece.color === 'w' ? 0 : size - 1;
     const oppColor: PlayerColor = piece.color === 'w' ? 'b' : 'w';
     if (
       !piece.hasMoved &&
       from.y === backRank &&
-      !isSquareSpatiallyAttackedOnBoard(srcBoard, from.x, from.y, oppColor)
+      !isSquareSpatiallyAttackedOnBoard(srcBoard, from.x, from.y, oppColor) &&
+      !isSquareCrossSpacetimeAttacked(state, from.l, from.t, from.x, from.y, oppColor)
     ) {
       for (let rx = 0; rx < size; rx++) {
         if (rx === from.x) continue;
@@ -1219,11 +1304,15 @@ export function getPseudoLegalMovesForPiece(
         const rookTargetX = kingTargetX - dirX;
         if (kingTargetX === rx) continue;
 
-        // Check squares King steps through and lands on are not spatially attacked on this board
+        // Check squares King steps through and lands on are not attacked spatially or across spacetime
         let safePath = true;
         const stepsCount = Math.abs(kingTargetX - from.x);
         for (let s = 1; s <= stepsCount; s++) {
-          if (isSquareSpatiallyAttackedOnBoard(srcBoard, from.x + dirX * s, backRank, oppColor)) {
+          const stepX = from.x + dirX * s;
+          if (
+            isSquareSpatiallyAttackedOnBoard(srcBoard, stepX, backRank, oppColor) ||
+            isSquareCrossSpacetimeAttacked(state, from.l, from.t, stepX, backRank, oppColor)
+          ) {
             safePath = false;
             break;
           }
@@ -1270,7 +1359,7 @@ export function getPseudoLegalMovesForPiece(
   for (const dir of DIRECTIONS_4D) {
     if (!allowedAxesCounts.includes(dir.axesCount)) continue;
 
-    for (let step = 1; step <= 12; step++) {
+    for (let step = 1; step <= 64; step++) {
       const tx = from.x + dir.dx * step;
       const ty = from.y + dir.dy * step;
       if (!isInsideSquareBounds(size, tx, ty)) break;
@@ -1308,7 +1397,14 @@ export function getPseudoLegalMovesForPiece(
 }
 
 /**
- * Finds all active threat vectors targeting Kings of `targetKingColor`.
+ * Finds all active threat vectors targeting Kings of `targetKingColor` from leaf boards
+ * where the opponent (`attackerColor`) is currently to move (plus 1-turn puzzle overrides).
+ *
+ * Crucial 5D Chess invariant:
+ * An `attackerColor` piece can only execute a capture from a leaf board where `leaf.activeColor === attackerColor`.
+ * Unplayed boards where `leaf.activeColor === targetKingColor` have not yet been moved on by `targetKingColor`;
+ * their impending checks are reported by `findActiveAndImpendingThreats` and become active threats in
+ * `findThreatsToColorKings` as soon as `targetKingColor` moves on that board (advancing it to `t + 1`).
  */
 export function findThreatsToColorKings(
   state: MultiverseState,
@@ -1321,12 +1417,14 @@ export function findThreatsToColorKings(
     const leaf = getLeafBoard(state, l);
     if (!leaf) continue;
 
-    const allowCrossSpacetimeFromLeaf =
+    const allowFromLeaf =
       leaf.activeColor === attackerColor ||
       ((state.variant === 'puzzle_retrocausal' ||
         state.variant === 'puzzle_unicorn_snipe' ||
         state.variant === 'puzzle_dragon_tesseract') &&
         targetKingColor === 'b');
+
+    if (!allowFromLeaf) continue;
 
     for (let y = 0; y < state.boardSize; y++) {
       for (let x = 0; x < state.boardSize; x++) {
@@ -1338,8 +1436,6 @@ export function findThreatsToColorKings(
         for (const m of candidateMoves) {
           if (m.captured && m.captured.type === 'k' && m.captured.color === targetKingColor) {
             const isCrossTimeline = coord.l !== m.to.l || coord.t !== m.to.t;
-            if (isCrossTimeline && !allowCrossSpacetimeFromLeaf) continue;
-
             threats.push({
               from: coord,
               to: m.to,
@@ -1357,7 +1453,7 @@ export function findThreatsToColorKings(
 }
 
 /**
- * Finds all active threat vectors AND impending retrocausal/cross-timeline threat vectors
+ * Finds all active threat vectors AND impending spatial/retrocausal/cross-timeline threat vectors
  * against `targetKingColor` Kings on leaf boards where `leaf.activeColor === targetKingColor`.
  */
 export function findActiveAndImpendingThreats(
@@ -1382,6 +1478,36 @@ export function findActiveAndImpendingThreats(
         const piece = leaf.squares[y][x];
         if (!piece || piece.color !== attackerColor) continue;
 
+        const actualFrom: Coord5D = { l: leaf.l, t: leaf.t, x, y };
+
+        // 1. Same-turn-step threats (dt === 0): 2D spatial checks on `leaf` AND cross-timeline checks (dl !== 0)
+        // to other leaf boards at the same turn step `t = leaf.t`.
+        const sameStepMoves = getPseudoLegalCapturesFromAnyBoard(state, actualFrom, piece);
+        for (const m of sameStepMoves) {
+          if (
+            m.to.t === leaf.t &&
+            m.captured &&
+            m.captured.type === 'k' &&
+            m.captured.color === targetKingColor
+          ) {
+            const destBoard = getBoard(state, m.to.l, m.to.t);
+            if (!destBoard || !destBoard.isLeaf) continue;
+            const key = `${actualFrom.l}_${actualFrom.t}_${actualFrom.x}_${actualFrom.y}_to_${m.to.l}_${m.to.t}_${m.to.x}_${m.to.y}`;
+            if (!seen.has(key)) {
+              seen.add(key);
+              result.push({
+                from: actualFrom,
+                to: m.to,
+                attacker: piece,
+                king: m.captured,
+                isCrossTimeline: actualFrom.l !== m.to.l || actualFrom.t !== m.to.t,
+              });
+            }
+          }
+        }
+
+        // 2. Impending cross-time / retrocausal threats from `virtualNextCoord = (leaf.l, leaf.t + 1)`
+        // targeting `targetKingColor` Kings on boards with `destBoard.activeColor === attackerColor`.
         const virtualNextCoord: Coord5D = { l: leaf.l, t: leaf.t + 1, x, y };
         const candidateMoves = getPseudoLegalCapturesFromAnyBoard(state, virtualNextCoord, piece);
         for (const m of candidateMoves) {
@@ -1389,7 +1515,6 @@ export function findActiveAndImpendingThreats(
             const destBoard = getBoard(state, m.to.l, m.to.t);
             if (!destBoard || destBoard.activeColor !== attackerColor) continue;
 
-            const actualFrom: Coord5D = { l: leaf.l, t: leaf.t, x, y };
             const key = `${actualFrom.l}_${actualFrom.t}_${actualFrom.x}_${actualFrom.y}_to_${m.to.l}_${m.to.t}_${m.to.x}_${m.to.y}`;
             if (!seen.has(key)) {
               seen.add(key);
@@ -1455,7 +1580,7 @@ export function findPastKingRadarWarnings(
             let blockerCoord: Coord5D | undefined;
             let blockersCount = 0;
 
-            for (let step = 1; step <= 8; step++) {
+            for (let step = 1; step <= 16; step++) {
               const tx = x + dir.dx * step;
               const ty = y + dir.dy * step;
               if (!isInsideSquareBounds(size, tx, ty)) break;
@@ -1473,7 +1598,7 @@ export function findPastKingRadarWarnings(
                   seen.add(key);
                   warnings.push({
                     attackerCoord: { l: leaf.l, t: leaf.t, x, y },
-                    kingCoord: { l: tl, t: tt, x: tx, y: ty },
+                    kingCoord: { l: tl, t: tt, x, y: ty },
                     attacker: piece,
                     king: cell,
                     blockerCoord,
@@ -1512,15 +1637,21 @@ export interface MovePreviewOutcome {
  * used by the Ghost Move & Timeline Branch Preview overlay when hovering a time-travel move.
  */
 export function previewMoveOutcome(state: MultiverseState, move: Move5D): MovePreviewOutcome {
-  const after = applyStagedMovePure(state, move);
+  const after = applyMoveForValidation(state, move);
   const bounds = getActiveTimelineBounds(after);
-  const lastStaged = after.stagedMoves[after.stagedMoves.length - 1];
-  const willBranchNewTimeline = lastStaged?.kind === 'timetravel_branch' && lastStaged.createdTimeline !== undefined;
-  const newTimelineIndex = lastStaged?.createdTimeline;
+  const willBranchNewTimeline =
+    move.kind === 'timetravel_branch' && after.timelineOrder.length > state.timelineOrder.length;
+  const newTimelineIndex = willBranchNewTimeline
+    ? after.timelineOrder.find((l) => !state.timelineOrder.includes(l))
+    : undefined;
   const isNewTimelineActive =
     newTimelineIndex !== undefined ? bounds.activeSet.has(newTimelineIndex) : undefined;
   const ghostBoardCoord =
-    lastStaged?.resultingTargetBoard ?? lastStaged?.resultingSourceBoard ?? { l: move.to.l, t: move.to.t + 1 };
+    move.from.l === move.to.l && move.from.t === move.to.t
+      ? { l: move.from.l, t: move.from.t + 1 }
+      : willBranchNewTimeline && newTimelineIndex !== undefined
+        ? { l: newTimelineIndex, t: move.to.t + 1 }
+        : { l: move.to.l, t: move.to.t + 1 };
 
   return {
     move,
@@ -1578,6 +1709,21 @@ export function buildCheckmateForensics(
   let fatalThreats = findActiveAndImpendingThreats(state, victimColor);
   let isPinnedZugzwang = false;
 
+  // Prioritize threats on boards with 0 local escape moves, and keep direct spatial mates ahead of secondary rays from the same attacker
+  if (fatalThreats.length > 1) {
+    fatalThreats = [...fatalThreats].sort((a, b) => {
+      const aFromBoard = getBoard(state, a.from.l, a.from.t);
+      const bFromBoard = getBoard(state, b.from.l, b.from.t);
+      const aStuck = aFromBoard && aFromBoard.isLeaf && !findFirstImmediateValidMoveOnBoard(state, aFromBoard, victimColor) ? 1 : 0;
+      const bStuck = bFromBoard && bFromBoard.isLeaf && !findFirstImmediateValidMoveOnBoard(state, bFromBoard, victimColor) ? 1 : 0;
+      if (aStuck !== bStuck) return bStuck - aStuck;
+      const aSpatial = !a.isCrossTimeline ? 1 : 0;
+      const bSpatial = !b.isCrossTimeline ? 1 : 0;
+      if (aSpatial !== bSpatial) return bSpatial - aSpatial;
+      return 0;
+    });
+  }
+
   if (fatalThreats.length === 0) {
     const playable = getPlayableBoards(state, victimColor);
     for (const pb of playable) {
@@ -1592,7 +1738,7 @@ export function buildCheckmateForensics(
             y,
           });
           for (const pm of pseudo) {
-            const after = applyStagedMovePure(state, pm);
+            const after = applyMoveForValidation(state, pm);
             const afterThreats = findThreatsToColorKings(after, victimColor);
             if (afterThreats.length > 0) {
               const rawTh = afterThreats[0];
@@ -1635,7 +1781,8 @@ export function buildCheckmateForensics(
     const toSqStr = formatSquare(primary.to.x, primary.to.y);
 
     const attackerLabel = `${attackerSide} ${attackerPieceName} @ ${fromBoardStr} (${fromSqStr})`;
-    const isPastKing = primary.to.t < primary.from.t;
+    const targetBoard = getBoard(state, primary.to.l, primary.to.t);
+    const isPastKing = primary.to.t < primary.from.t || Boolean(targetBoard && !targetBoard.isLeaf);
     const isCrossLine = primary.from.l !== primary.to.l;
 
     const victimKingLabel = isPastKing
@@ -1785,7 +1932,7 @@ function getPseudoLegalCapturesFromAnyBoard(
 
   for (const dir of DIRECTIONS_4D) {
     if (!allowedAxesCounts.includes(dir.axesCount)) continue;
-    for (let step = 1; step <= 12; step++) {
+    for (let step = 1; step <= 64; step++) {
       const tx = from.x + dir.dx * step;
       const ty = from.y + dir.dy * step;
       if (!isInsideSquareBounds(size, tx, ty)) break;
@@ -1800,6 +1947,389 @@ function getPseudoLegalCapturesFromAnyBoard(
 }
 
 /**
+ * Fast, lightweight move application used strictly for move legality & checkmate validation.
+ * Only clones the affected timeline(s) and their leaf board(s), avoiding expensive deep copies
+ * of historical snapshots, move history, and untouched timelines.
+ */
+function applyMoveForValidation(state: MultiverseState, move: Move5D): MultiverseState {
+  const srcTimeline = state.timelines[move.from.l];
+  const srcBoard = getBoard(state, move.from.l, move.from.t);
+  if (!srcTimeline || !srcBoard) return state;
+
+  const timelinesCopy: Record<number, Timeline> = { ...state.timelines };
+  const timelineOrderCopy = [...state.timelineOrder];
+
+  const movedPiece: Piece = {
+    ...move.piece,
+    type: move.promotedTo ?? move.piece.type,
+    hasMoved: true,
+  };
+  const nextColor: PlayerColor = state.turnColor === 'w' ? 'b' : 'w';
+
+  if (move.from.l === move.to.l && move.from.t === move.to.t) {
+    const newSquares = cloneBoardSquares(srcBoard.squares);
+    newSquares[move.from.y][move.from.x] = null;
+
+    if (
+      move.isCastling &&
+      move.castlingRookFromX !== undefined &&
+      move.castlingRookToX !== undefined
+    ) {
+      const rook = newSquares[move.from.y][move.castlingRookFromX];
+      newSquares[move.from.y][move.castlingRookFromX] = null;
+      if (rook) {
+        newSquares[move.from.y][move.castlingRookToX] = {
+          ...rook,
+          hasMoved: true,
+        };
+      }
+    }
+
+    if (move.isEnPassant && move.enPassantCapturedCoord) {
+      newSquares[move.enPassantCapturedCoord.y][move.enPassantCapturedCoord.x] = null;
+    }
+
+    newSquares[move.to.y][move.to.x] = movedPiece;
+
+    const isDoublePawnAdvance =
+      move.piece.type === 'p' &&
+      Math.abs(move.to.y - move.from.y) === 2 &&
+      move.from.x === move.to.x;
+    const forwardDir = move.piece.color === 'w' ? 1 : -1;
+    const newT = srcBoard.t + 1;
+
+    const newBoard: BoardState = {
+      id: `L${srcBoard.l}_T${newT}`,
+      l: srcBoard.l,
+      t: newT,
+      turnNumber: Math.floor(newT / 2) + 1,
+      activeColor: nextColor,
+      size: state.boardSize,
+      squares: newSquares,
+      isLeaf: true,
+      parentBoardId: srcBoard.id,
+      spawnedByMoveId: move.id,
+      enPassantTarget: isDoublePawnAdvance
+        ? {
+            x: move.from.x,
+            y: move.from.y + forwardDir,
+            pawnX: move.to.x,
+            pawnY: move.to.y,
+            byColor: move.piece.color,
+          }
+        : null,
+    };
+
+    const updatedBoards = srcTimeline.boards.map((b) =>
+      b.t === srcBoard.t ? { ...b, isLeaf: false } : b
+    );
+    updatedBoards.push(newBoard);
+    timelinesCopy[move.from.l] = {
+      ...srcTimeline,
+      boards: updatedBoards,
+    };
+  } else {
+    const srcNextSquares = cloneBoardSquares(srcBoard.squares);
+    srcNextSquares[move.from.y][move.from.x] = null;
+    const srcNextT = srcBoard.t + 1;
+    const srcNextBoard: BoardState = {
+      id: `L${srcBoard.l}_T${srcNextT}`,
+      l: srcBoard.l,
+      t: srcNextT,
+      turnNumber: Math.floor(srcNextT / 2) + 1,
+      activeColor: nextColor,
+      size: state.boardSize,
+      squares: srcNextSquares,
+      isLeaf: true,
+      parentBoardId: srcBoard.id,
+      spawnedByMoveId: move.id,
+      enPassantTarget: null,
+    };
+
+    const updatedSrcBoards = srcTimeline.boards.map((b) =>
+      b.t === srcBoard.t ? { ...b, isLeaf: false } : b
+    );
+    updatedSrcBoards.push(srcNextBoard);
+    timelinesCopy[move.from.l] = {
+      ...srcTimeline,
+      boards: updatedSrcBoards,
+    };
+
+    const dstBoard = getBoard(state, move.to.l, move.to.t);
+    if (dstBoard) {
+      const dstNextSquares = cloneBoardSquares(dstBoard.squares);
+      dstNextSquares[move.to.y][move.to.x] = movedPiece;
+      const dstNextT = dstBoard.t + 1;
+
+      if (dstBoard.isLeaf) {
+        const dstTimeline = timelinesCopy[dstBoard.l];
+        const mergedBoard: BoardState = {
+          id: `L${dstBoard.l}_T${dstNextT}`,
+          l: dstBoard.l,
+          t: dstNextT,
+          turnNumber: Math.floor(dstNextT / 2) + 1,
+          activeColor: nextColor,
+          size: state.boardSize,
+          squares: dstNextSquares,
+          isLeaf: true,
+          parentBoardId: dstBoard.id,
+          spawnedByMoveId: move.id,
+          enPassantTarget: null,
+        };
+        const updatedDstBoards = dstTimeline.boards.map((b) =>
+          b.t === dstBoard.t ? { ...b, isLeaf: false } : b
+        );
+        updatedDstBoards.push(mergedBoard);
+        timelinesCopy[dstBoard.l] = {
+          ...dstTimeline,
+          boards: updatedDstBoards,
+        };
+      } else {
+        const newL = allocateNewTimelineIndex(
+          { ...state, timelineOrder: timelineOrderCopy },
+          state.turnColor
+        );
+        const branchedBoard: BoardState = {
+          id: `L${newL}_T${dstNextT}`,
+          l: newL,
+          t: dstNextT,
+          turnNumber: Math.floor(dstNextT / 2) + 1,
+          activeColor: nextColor,
+          size: state.boardSize,
+          squares: dstNextSquares,
+          isLeaf: true,
+          parentBoardId: dstBoard.id,
+          spawnedByMoveId: move.id,
+          enPassantTarget: null,
+        };
+        timelinesCopy[newL] = {
+          l: newL,
+          name: `Timeline ${formatTimelineLabel(newL)}`,
+          createdBy: state.turnColor,
+          parentTimeline: dstBoard.l,
+          branchFromStep: dstBoard.t,
+          boards: [branchedBoard],
+        };
+        timelineOrderCopy.push(newL);
+        timelineOrderCopy.sort((a, b) => a - b);
+      }
+    }
+  }
+
+  const next: MultiverseState = {
+    ...state,
+    timelines: timelinesCopy,
+    timelineOrder: timelineOrderCopy,
+  };
+  next.presentStep = calculatePresentStep(next);
+  return next;
+}
+
+/**
+ * Finds the first move originating on `board` for `color` that leaves 0 active opponent-turn threats.
+ */
+const firstValidMoveCache = new WeakMap<
+  BoardState,
+  Map<string, { move: Move5D; nextState: MultiverseState } | null>
+>();
+
+function findFirstImmediateValidMoveOnBoard(
+  state: MultiverseState,
+  board: BoardState,
+  color: PlayerColor
+): { move: Move5D; nextState: MultiverseState } | null {
+  const stateKey = `${color}_${state.timelineOrder.map((l) => { const lf = getLeafBoard(state, l); return `${l}:${lf?.t}:${lf?.spawnedByMoveId ?? ""}`; }).join(",")}`;
+  let boardMap = firstValidMoveCache.get(board);
+  if (boardMap && boardMap.has(stateKey)) {
+    return boardMap.get(stateKey) ?? null;
+  }
+  for (let y = 0; y < state.boardSize; y++) {
+    for (let x = 0; x < state.boardSize; x++) {
+      const p = board.squares[y][x];
+      if (!p || p.color !== color) continue;
+      const pseudo = getPseudoLegalMovesForPiece(state, { l: board.l, t: board.t, x, y });
+      // Try spatial moves first for speed
+      for (const pass of ["spatial", "other"] as const) {
+        for (const m of pseudo) {
+          if ((pass === "spatial") !== (m.kind === "spatial")) continue;
+          const nextState = applyMoveForValidation(state, m);
+          if (m.captured?.type === "k" || findThreatsToColorKings(nextState, color).length === 0) {
+            const res = { move: m, nextState };
+            if (!boardMap) {
+              boardMap = new Map();
+              firstValidMoveCache.set(board, boardMap);
+            }
+            boardMap.set(stateKey, res);
+            return res;
+          }
+        }
+      }
+    }
+  }
+  if (!boardMap) {
+    boardMap = new Map();
+    firstValidMoveCache.set(board, boardMap);
+  }
+  boardMap.set(stateKey, null);
+  return null;
+}
+
+/**
+ * Collects all moves originating on `board` for `color` that leave 0 active opponent-turn threats,
+ * ordered with spatial moves first.
+ */
+function getImmediateValidMovesOnBoard(
+  state: MultiverseState,
+  board: BoardState,
+  color: PlayerColor
+): { move: Move5D; nextState: MultiverseState }[] {
+  const spatialList: { move: Move5D; nextState: MultiverseState }[] = [];
+  const temporalList: { move: Move5D; nextState: MultiverseState }[] = [];
+
+  for (let y = 0; y < state.boardSize; y++) {
+    for (let x = 0; x < state.boardSize; x++) {
+      const p = board.squares[y][x];
+      if (!p || p.color !== color) continue;
+      const pseudo = getPseudoLegalMovesForPiece(state, { l: board.l, t: board.t, x, y });
+      for (const m of pseudo) {
+        const nextState = applyMoveForValidation(state, m);
+        if (m.captured?.type === 'k' || findThreatsToColorKings(nextState, color).length === 0) {
+          if (m.kind === 'spatial') {
+            spatialList.push({ move: m, nextState });
+          } else {
+            temporalList.push({ move: m, nextState });
+          }
+        }
+      }
+    }
+  }
+  return [...spatialList, ...temporalList];
+}
+
+/**
+ * Determines whether `color` can complete all remaining mandatory boards from `state`
+ * to reach a valid turn-submission state with zero threats on `color`'s Kings.
+ */
+export function canCompleteMandatoryTurn(
+  state: MultiverseState,
+  color: PlayerColor = state.turnColor,
+  depth = 8
+): boolean {
+  if (findThreatsToColorKings(state, color).length > 0) {
+    return false;
+  }
+
+  const playable = getPlayableBoards(state, color);
+  const mandatory = playable.filter((p) => p.isMandatory);
+  if (mandatory.length === 0) {
+    return true;
+  }
+  if (depth <= 0) {
+    return true;
+  }
+
+  // 1. Check if each mandatory board has at least one local valid move.
+  let firstMoveOnTarget: { move: Move5D; nextState: MultiverseState } | null = null;
+  for (let idx = 0; idx < mandatory.length; idx++) {
+    const mb = mandatory[idx];
+    const firstLocal = findFirstImmediateValidMoveOnBoard(state, mb.board, color);
+    if (idx === 0) {
+      firstMoveOnTarget = firstLocal;
+    }
+    if (!firstLocal) {
+      const stuckBoard = mb.board;
+      for (const pb of playable) {
+        if (pb.board.id === stuckBoard.id) continue;
+        for (let y = 0; y < state.boardSize; y++) {
+          for (let x = 0; x < state.boardSize; x++) {
+            const p = pb.board.squares[y][x];
+            if (!p || p.color !== color) continue;
+            const pseudo = getPseudoLegalMovesForPiece(state, {
+              l: pb.board.l,
+              t: pb.board.t,
+              x,
+              y,
+            });
+            for (const m of pseudo) {
+              const mergesOntoStuck = m.to.l === stuckBoard.l && m.to.t === stuckBoard.t;
+              const branchesBeforeStuck =
+                m.kind === 'timetravel_branch' && m.to.t + 1 < stuckBoard.t;
+              if (!mergesOntoStuck && !branchesBeforeStuck) continue;
+
+              const nextState = applyMoveForValidation(state, m);
+              if (findThreatsToColorKings(nextState, color).length > 0) continue;
+              if (
+                branchesBeforeStuck &&
+                getPlayableBoards(nextState, color).some(
+                  (rem) => rem.isMandatory && rem.board.id === stuckBoard.id
+                )
+              ) {
+                continue;
+              }
+              if (canCompleteMandatoryTurn(nextState, color, depth - 1)) {
+                return true;
+              }
+            }
+          }
+        }
+      }
+      return false;
+    }
+  }
+
+  // Fast path: if only 1 mandatory board remained and it has a valid local move, turn is completable!
+  if (mandatory.length === 1 && firstMoveOnTarget) {
+    return true;
+  }
+
+  // Try the already-found first local move on mandatory[0] before enumerating all moves on the board!
+  if (firstMoveOnTarget && canCompleteMandatoryTurn(firstMoveOnTarget.nextState, color, depth - 1)) {
+    return true;
+  }
+
+  // Fallback: enumerate other candidate moves on mandatory[0] in case of a cross-timeline collision
+  const targetBoard = mandatory[0].board;
+  const candidates = getImmediateValidMovesOnBoard(state, targetBoard, color);
+  const maxBranches = Math.min(candidates.length, 16);
+  for (let i = 0; i < maxBranches; i++) {
+    if (candidates[i].move.id === firstMoveOnTarget?.move.id) continue;
+    if (canCompleteMandatoryTurn(candidates[i].nextState, color, depth - 1)) {
+      return true;
+    }
+  }
+
+  // Also check if another playable board can merge onto `targetBoard` or shift `presentStep`
+  for (const pb of playable) {
+    if (pb.board.id === targetBoard.id) continue;
+    for (let y = 0; y < state.boardSize; y++) {
+      for (let x = 0; x < state.boardSize; x++) {
+        const p = pb.board.squares[y][x];
+        if (!p || p.color !== color) continue;
+        const pseudo = getPseudoLegalMovesForPiece(state, {
+          l: pb.board.l,
+          t: pb.board.t,
+          x,
+          y,
+        });
+        for (const m of pseudo) {
+          const mergesOntoTarget = m.to.l === targetBoard.l && m.to.t === targetBoard.t;
+          const branchesBeforeTarget =
+            m.kind === 'timetravel_branch' && m.to.t + 1 < targetBoard.t;
+          if (!mergesOntoTarget && !branchesBeforeTarget) continue;
+          const nextState = applyMoveForValidation(state, m);
+          if (findThreatsToColorKings(nextState, color).length > 0) continue;
+          if (canCompleteMandatoryTurn(nextState, color, depth - 1)) {
+            return true;
+          }
+        }
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
  * Returns legal moves for a piece at `from` on a playable leaf board.
  */
 export function getLegalMovesForSquare(state: MultiverseState, from: Coord5D): Move5D[] {
@@ -1811,16 +2341,55 @@ export function getLegalMovesForSquare(state: MultiverseState, from: Coord5D): M
   if (!piece || piece.color !== state.turnColor) return [];
 
   const pseudo = getPseudoLegalMovesForPiece(state, from);
-  // Filter out moves that leave ANY of the friendly King(s) in check on ANY board.
-  // The old filter only inspected threats touching the move's resultingSourceBoard /
-  // resultingTargetBoard, so a king in check on a third board (unrelated to the move)
-  // was silently ignored. That let a player stage a move elsewhere while a king sat in
-  // check, which then blocked canSubmitCurrentTurn and hung the game. We now reject any
-  // move that leaves the mover in check anywhere.
+  if (pseudo.length === 0) return [];
+
+  // Pre-collect default valid spatial moves on OTHER mandatory boards so we do not re-scan them for every move on this square
+  const otherMandatory = getPlayableBoards(state, state.turnColor).filter(
+    (p) => p.isMandatory && p.board.id !== srcBoard.id
+  );
+  const precomputedOtherMoves: Move5D[] = [];
+  let allOtherHaveLocalMove = true;
+  for (const omb of otherMandatory) {
+    const first = findFirstImmediateValidMoveOnBoard(state, omb.board, state.turnColor);
+    if (first && first.move.kind === 'spatial') {
+      precomputedOtherMoves.push(first.move);
+    } else {
+      allOtherHaveLocalMove = false;
+      break;
+    }
+  }
+
   return pseudo.filter((move) => {
-    const nextState = applyStagedMovePure(state, move);
-    const threats = findThreatsToColorKings(nextState, state.turnColor);
-    return threats.length === 0;
+    if (move.captured?.type === 'k') return true;
+    const nextState = applyMoveForValidation(state, move);
+    if (findThreatsToColorKings(nextState, state.turnColor).length > 0) {
+      return false;
+    }
+    if (otherMandatory.length === 0 && getPlayableBoards(nextState, state.turnColor).every((p) => !p.isMandatory)) {
+      return true;
+    }
+    // Fast-path: if all other mandatory boards had a valid spatial move,
+    // verify applying those precomputed spatial moves on any still-mandatory boards leaves 0 threats!
+    if (allOtherHaveLocalMove) {
+      let probe = nextState;
+      let ok = true;
+      for (const om of precomputedOtherMoves) {
+        if (om.from.l === move.to.l && om.from.t === move.to.t) continue;
+        const stillMand = getPlayableBoards(probe, state.turnColor).some(
+          (p) => p.isMandatory && p.board.l === om.from.l && p.board.t === om.from.t
+        );
+        if (!stillMand) continue;
+        probe = applyMoveForValidation(probe, om);
+        if (findThreatsToColorKings(probe, state.turnColor).length > 0) {
+          ok = false;
+          break;
+        }
+      }
+      if (ok && getPlayableBoards(probe, state.turnColor).every((p) => !p.isMandatory)) {
+        return true;
+      }
+    }
+    return canCompleteMandatoryTurn(nextState, state.turnColor, 6);
   });
 }
 
@@ -2082,6 +2651,44 @@ export function rewindToTurnIndex(state: MultiverseState, turnIdx: number): Mult
 }
 
 /**
+ * Checks whether `color` has at least one legal move on any playable board that can lead to a valid turn completion.
+ */
+export function hasAnyLegalTurnMove(
+  state: MultiverseState,
+  color: PlayerColor = state.turnColor
+): boolean {
+  const probeState = state.turnColor === color ? state : { ...state, turnColor: color };
+  const playableBoards = getPlayableBoards(probeState, color);
+  if (playableBoards.length === 0) return false;
+
+  // Prefer checking mandatory boards first
+  const ordered = [
+    ...playableBoards.filter((p) => p.isMandatory),
+    ...playableBoards.filter((p) => !p.isMandatory),
+  ];
+
+  for (const pb of ordered) {
+    for (let y = 0; y < probeState.boardSize; y++) {
+      for (let x = 0; x < probeState.boardSize; x++) {
+        const piece = pb.board.squares[y][x];
+        if (piece && piece.color === color) {
+          const moves = getLegalMovesForSquare(probeState, {
+            l: pb.board.l,
+            t: pb.board.t,
+            x,
+            y,
+          });
+          if (moves.length > 0) {
+            return true;
+          }
+        }
+      }
+    }
+  }
+  return false;
+}
+
+/**
  * Commits all staged moves and transitions the turn to the next player.
  */
 export function submitTurnPure(state: MultiverseState): MultiverseState {
@@ -2143,54 +2750,17 @@ export function submitTurnPure(state: MultiverseState): MultiverseState {
     }
   }
 
-  // Check if the incoming player has any legal moves on their playable boards
+  // Check if the incoming player can complete a legal turn across their playable boards
   const playableBoards = getPlayableBoards(next, next.turnColor);
-  let totalLegalMoves = 0;
-
-  for (const pb of playableBoards) {
-    for (let y = 0; y < next.boardSize; y++) {
-      for (let x = 0; x < next.boardSize; x++) {
-        const piece = pb.board.squares[y][x];
-        if (piece && piece.color === next.turnColor) {
-          const moves = getLegalMovesForSquare(next, {
-            l: pb.board.l,
-            t: pb.board.t,
-            x,
-            y,
-          });
-          totalLegalMoves += moves.length;
-        }
-      }
-    }
-  }
-
-  // A mandatory board with no on-board legal move is NOT an automatic loss.
-  // In 5D Chess a player may escape via a spacetime move (branch/merge/hop) that
-  // relocates the King or reshapes the active-board set, so a board with no local
-  // legal move must not by itself declare checkmate. The old
-  // `hasUnrescuableMandatoryBoard` test wrongly used "some legal move lands on the
-  // stuck board" as a proxy for "the stuck board can be saved" — it ignored
-  // legitimate spacetime escapes whose destination is a different board, so a player
-  // who COULD jump the King away was declared checkmated. Only a total absence of
-  // any legal move (on ANY playable board) is a true mate / stalemate.
-  const isCheckmated = totalLegalMoves === 0 && playableBoards.length > 0;
-
-  if (isCheckmated) {
+  if (playableBoards.length > 0 && !hasAnyLegalTurnMove(next, next.turnColor)) {
     const threats = findActiveAndImpendingThreats(next, next.turnColor);
-    const forensics = buildCheckmateForensics(
-      next,
-      next.turnColor,
-      threats.length > 0 ? state.turnColor : 'draw'
-    );
-    if (threats.length > 0 || forensics.fatalThreats.length > 0) {
-      const finalizedForensics =
-        forensics.winnerColor === 'draw'
-          ? buildCheckmateForensics(next, next.turnColor, state.turnColor)
-          : forensics;
+    if (threats.length > 0) {
+      const forensics = buildCheckmateForensics(next, next.turnColor, state.turnColor);
       next.winner = state.turnColor;
-      next.winReason = finalizedForensics.summary;
-      next.checkmateForensics = finalizedForensics;
+      next.winReason = forensics.summary;
+      next.checkmateForensics = forensics;
     } else {
+      const forensics = buildCheckmateForensics(next, next.turnColor, 'draw');
       next.winner = 'draw';
       next.winReason = forensics.summary;
       next.checkmateForensics = forensics;
@@ -2248,11 +2818,6 @@ export function computeAITurn(state: MultiverseState): MultiverseState {
   let safetyCounter = 0;
   const persona = working.aiPersona ?? 'tactician';
 
-  // The AI must keep staging moves until NO mandatory board remains, otherwise
-  // submitTurnPure refuses and the game hangs. The old hard cap of 8 left the turn
-  // unplayable once timeline branching produced more than 8 mandatory boards. We now
-  // loop until the turn is submittable, with a generous safety cap against pathological
-  // infinite branching.
   const MAX_AI_STEPS = 400;
   while (safetyCounter < MAX_AI_STEPS && !working.winner) {
     safetyCounter++;
@@ -2263,103 +2828,93 @@ export function computeAITurn(state: MultiverseState): MultiverseState {
       break;
     }
 
-    // When mandatory boards exist the AI must still be allowed to search EVERY
-    // active board, not just the mandatory ones: a non-mandatory active board may
-    // hold a spacetime move (branch / merge / hop) that travels to a stuck mandatory
-    // board and resolves its check (e.g. block, capture the attacker, or move a King).
-    // The old code restricted the search to `mandatory` only, so a rescue move living
-    // on an optional active board was never seen and the AI wrongly declared mate.
-    const targetBoards =
-      mandatory.length > 0
-        ? playable.filter((p) => p.isActiveTimeline || p.isMandatory)
-        : playable.filter((p) => p.isActiveTimeline);
+    const targetBoards = mandatory.length > 0 ? mandatory : playable.filter((p) => p.isActiveTimeline);
     if (targetBoards.length === 0) break;
 
-    // Gather candidate moves across ALL target boards, not just the first one.
-    // The old code only examined `targetBoards[0]`, so when the first mandatory
-    // board had no local legal move the AI immediately declared checkmate even if
-    // the King could escape via a spacetime move (branch/merge/hop) from ANOTHER
-    // board. We now search every target board and only give up when none has a move.
+    const boardToPlay = targetBoards[0].board;
     const allCandidateMoves: { move: Move5D; score: number }[] = [];
 
-    for (const tb of targetBoards) {
-      const boardToPlay = tb.board;
+    const collectMovesFromBoard = (b: BoardState) => {
       for (let y = 0; y < working.boardSize; y++) {
         for (let x = 0; x < working.boardSize; x++) {
-          const p = boardToPlay.squares[y][x];
+          const p = b.squares[y][x];
           if (!p || p.color !== working.turnColor) continue;
           const legal = getLegalMovesForSquare(working, {
-            l: boardToPlay.l,
-            t: boardToPlay.t,
+            l: b.l,
+            t: b.t,
             x,
             y,
           });
-        for (const m of legal) {
-          let score = 0;
-          if (m.captured) {
-            score += PIECE_VALUES[m.captured.type] * 2 - PIECE_VALUES[m.piece.type] * 0.1;
-          }
-          if (m.promotedTo) {
-            score += 750;
-          }
-          if (m.isCastling) {
-            score += 90;
-          }
-          const center = (working.boardSize - 1) / 2;
-          const distCenter = Math.abs(m.to.x - center) + Math.abs(m.to.y - center);
-          score += (working.boardSize - distCenter) * 10;
-
-          const afterMove = applyStagedMovePure(working, m);
-          const remainingThreats = findThreatsToColorKings(afterMove, working.turnColor);
-          if (remainingThreats.length === 0) {
-            score += 500;
-          } else {
-            score -= remainingThreats.length * 400;
-          }
-
-          const oppColor: PlayerColor = working.turnColor === 'w' ? 'b' : 'w';
-          const oppThreats = findActiveAndImpendingThreats(afterMove, oppColor);
-          if (oppThreats.length > 0) {
-            score += persona === 'chronomancer' ? 320 : persona === 'tactician' ? 220 : 120;
-          }
-
-          // Persona-specific time-travel heuristics
-          if (m.kind === 'timetravel_branch') {
-            if (persona === 'novice') {
-              score -= 140; // Novice prefers staying on 2D spatial boards
-            } else if (persona === 'chronomancer') {
-              score += m.captured || oppThreats.length > 0 ? 180 : 45;
-            } else {
-              // Tactician
-              score += m.captured || oppThreats.length > 0 ? 55 : -40;
+          for (const m of legal) {
+            let score = 0;
+            if (m.captured) {
+              score += PIECE_VALUES[m.captured.type] * 2 - PIECE_VALUES[m.piece.type] * 0.1;
             }
-          } else if (m.kind === 'timetravel_merge') {
-            score += persona === 'novice' ? -30 : m.captured ? 65 : 15;
-          }
+            if (m.promotedTo) {
+              score += 750;
+            }
+            if (m.isCastling) {
+              score += 90;
+            }
+            const center = (working.boardSize - 1) / 2;
+            const distCenter = Math.abs(m.to.x - center) + Math.abs(m.to.y - center);
+            score += (working.boardSize - distCenter) * 10;
 
-          allCandidateMoves.push({ move: m, score });
+            const afterMove = applyMoveForValidation(working, m);
+            const remainingThreats = findThreatsToColorKings(afterMove, working.turnColor);
+            if (remainingThreats.length === 0) {
+              score += 500;
+            } else {
+              score -= remainingThreats.length * 400;
+            }
+
+            const oppColor: PlayerColor = working.turnColor === 'w' ? 'b' : 'w';
+            const oppThreats = findActiveAndImpendingThreats(afterMove, oppColor);
+            if (oppThreats.length > 0) {
+              score += persona === 'chronomancer' ? 320 : persona === 'tactician' ? 220 : 120;
+            }
+
+            // Persona-specific time-travel heuristics
+            if (m.kind === 'timetravel_branch') {
+              if (persona === 'novice') {
+                score -= 140; // Novice prefers staying on 2D spatial boards
+              } else if (persona === 'chronomancer') {
+                score += m.captured || oppThreats.length > 0 ? 180 : 45;
+              } else {
+                // Tactician
+                score += m.captured || oppThreats.length > 0 ? 55 : -40;
+              }
+            } else if (m.kind === 'timetravel_merge') {
+              score += persona === 'novice' ? -30 : m.captured ? 65 : 15;
+            }
+
+            allCandidateMoves.push({ move: m, score });
+          }
         }
       }
-    }
+    };
+
+    collectMovesFromBoard(boardToPlay);
+
+    // If `boardToPlay` has no direct moves (e.g., it requires a cross-timeline rescue merge or branch from another playable board),
+    // search all other playable boards for legal rescue moves.
+    if (allCandidateMoves.length === 0) {
+      for (const pb of playable) {
+        if (pb.board.id === boardToPlay.id) continue;
+        collectMovesFromBoard(pb.board);
+      }
     }
 
     if (allCandidateMoves.length === 0) {
       const threats = findActiveAndImpendingThreats(working, working.turnColor);
       const winColor: PlayerColor = working.turnColor === 'w' ? 'b' : 'w';
-      const forensics = buildCheckmateForensics(
-        working,
-        working.turnColor,
-        threats.length > 0 ? winColor : 'draw'
-      );
-      if (threats.length > 0 || forensics.fatalThreats.length > 0) {
-        const finalized =
-          forensics.winnerColor === 'draw'
-            ? buildCheckmateForensics(working, working.turnColor, winColor)
-            : forensics;
+      if (threats.length > 0) {
+        const forensics = buildCheckmateForensics(working, working.turnColor, winColor);
         working.winner = winColor;
-        working.winReason = finalized.summary;
-        working.checkmateForensics = finalized;
+        working.winReason = forensics.summary;
+        working.checkmateForensics = forensics;
       } else {
+        const forensics = buildCheckmateForensics(working, working.turnColor, 'draw');
         working.winner = 'draw';
         working.winReason = forensics.summary;
         working.checkmateForensics = forensics;
