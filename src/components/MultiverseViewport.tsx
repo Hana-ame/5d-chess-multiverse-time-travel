@@ -4,6 +4,7 @@ import {
   Coord5D,
   Move5D,
   MultiverseState,
+  PastKingRadarWarning,
   ThreatVector,
 } from '../game/types';
 import {
@@ -11,10 +12,11 @@ import {
   formatSquare,
   formatTimelineLabel,
   formatTurnStep,
-  getActiveTimelines,
+  getActiveTimelineBounds,
   getBoardPlayableStatus,
+  previewMoveOutcome,
 } from '../game/engine';
-import { ChessPieceSVG } from './ChessPieceSVG';
+import { ChessPieceSVG, PIECE_NAMES } from './ChessPieceSVG';
 import { useI18n } from '../i18n';
 
 interface MultiverseViewportProps {
@@ -22,11 +24,17 @@ interface MultiverseViewportProps {
   selectedCoord: Coord5D | null;
   legalMovesForSelected: Move5D[];
   threats: ThreatVector[];
+  radarWarnings: PastKingRadarWarning[];
   showAllHistoryVectors: boolean;
+  sliceHighlightEnabled: boolean;
+  hoveredCoord: Coord5D | null;
+  hoveredMove: Move5D | null;
+  onHoverSquare: (coord: Coord5D | null, matchingMove: Move5D | null) => void;
   onSquareClick: (coord: Coord5D) => void;
   onSubmitTurn: () => void;
   onUndoStaged: () => void;
   focusPresentSignal: number;
+  focusBoardTarget: { l: number; t: number; seq: number } | null;
 }
 
 const FILES = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
@@ -36,23 +44,45 @@ export const MultiverseViewport: React.FC<MultiverseViewportProps> = ({
   selectedCoord,
   legalMovesForSelected,
   threats,
+  radarWarnings,
   showAllHistoryVectors,
+  sliceHighlightEnabled,
+  hoveredCoord,
+  hoveredMove,
+  onHoverSquare,
   onSquareClick,
   onSubmitTurn,
   onUndoStaged,
   focusPresentSignal,
+  focusBoardTarget,
 }) => {
-  const { t, tf } = useI18n();
+  const { t: i18nT, tf: i18nTF } = useI18n();
   const containerRef = useRef<HTMLDivElement>(null);
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 80, y: 90 });
   const [zoom, setZoom] = useState<number>(1);
   const [isDragging, setIsDragging] = useState<boolean>(false);
+  const [altKeyHeld, setAltKeyHeld] = useState<boolean>(false);
   const dragStartRef = useRef<{ clientX: number; clientY: number; panX: number; panY: number }>({
     clientX: 0,
     clientY: 0,
     panX: 0,
     panY: 0,
   });
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Alt') setAltKeyHeld(true);
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'Alt') setAltKeyHeld(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+    };
+  }, []);
 
   // Geometry constants for deterministic spacetime grid layout
   const squarePx = state.boardSize <= 5 ? 38 : state.boardSize === 6 ? 34 : 29;
@@ -82,8 +112,23 @@ export const MultiverseViewport: React.FC<MultiverseViewportProps> = ({
     return maxT;
   }, [state.timelines, state.timelineOrder]);
 
-  const activeTimelines = useMemo(() => getActiveTimelines(state), [state]);
+  const timelineBounds = useMemo(() => getActiveTimelineBounds(state), [state]);
+  const activeTimelines = timelineBounds.activeSet;
   const submitStatus = useMemo(() => canSubmitCurrentTurn(state), [state]);
+
+  // Compute Ghost Move & Branch Preview when hovering a legal move
+  const ghostPreview = useMemo(() => {
+    if (!hoveredMove || state.winner) return null;
+    return previewMoveOutcome(state, hoveredMove);
+  }, [state, hoveredMove]);
+
+  // Active Slice Coordinate (x, y) when Slice Highlight is ON or Alt is held
+  const activeSliceXY = useMemo(() => {
+    if (!sliceHighlightEnabled && !altKeyHeld) return null;
+    const ref = hoveredCoord ?? selectedCoord;
+    if (!ref) return null;
+    return { x: ref.x, y: ref.y };
+  }, [sliceHighlightEnabled, altKeyHeld, hoveredCoord, selectedCoord]);
 
   const posTimelineCount = useMemo(
     () => sortedRowsDesc.filter((l) => l > 0).length,
@@ -92,7 +137,6 @@ export const MultiverseViewport: React.FC<MultiverseViewportProps> = ({
   const prevPosCountRef = useRef<number>(posTimelineCount);
 
   // Compensate pan.y when a new positive timeline (+L1, +L2...) is prepended above L0
-  // so existing boards stay locked at their exact screen position.
   useEffect(() => {
     const deltaPos = posTimelineCount - prevPosCountRef.current;
     prevPosCountRef.current = posTimelineCount;
@@ -127,13 +171,28 @@ export const MultiverseViewport: React.FC<MultiverseViewportProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusPresentSignal, state.variant, state.boardSize]);
 
-  // Map a 5D coordinate (l, t, x, y) to exact pixel center in the canvas coordinate system
+  // Focus camera on a specific (l, t) board when clicked in the Move History Drawer
+  useEffect(() => {
+    if (!focusBoardTarget) return;
+    const el = containerRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const rowIdx = sortedRowsDesc.indexOf(focusBoardTarget.l);
+    if (rowIdx === -1) return;
+    const bx = focusBoardTarget.t * colPitch + boardWidth / 2;
+    const by = rowIdx * rowPitch + boardHeight / 2;
+    setPan({
+      x: Math.round(rect.width * 0.48 - bx * zoom),
+      y: Math.round(rect.height * 0.48 - by * zoom),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusBoardTarget?.seq]);
+
   const getSquareCenterPx = (coord: Coord5D): { cx: number; cy: number } | null => {
     const rowIdx = sortedRowsDesc.indexOf(coord.l);
     if (rowIdx === -1) return null;
     const boardLeft = coord.t * colPitch;
     const boardTop = rowIdx * rowPitch;
-    // Note: rank y=boardSize-1 is rendered at the top of the board, y=0 at the bottom
     const visualRow = state.boardSize - 1 - coord.y;
     const cx = boardLeft + boardCardPadding + coord.x * squarePx + squarePx / 2;
     const cy =
@@ -158,18 +217,64 @@ export const MultiverseViewport: React.FC<MultiverseViewportProps> = ({
     return map;
   }, [legalMovesForSelected]);
 
-  // Fast lookup map for squares with threatened Kings
+  // Combine active threats with checkmate forensics fatal threats so the kill vector is always visible after game over
+  const allVisibleThreats = useMemo(() => {
+    const map = new Map<string, ThreatVector>();
+    for (const th of threats) {
+      map.set(
+        `${th.from.l}_${th.from.t}_${th.from.x}_${th.from.y}_to_${th.to.l}_${th.to.t}_${th.to.x}_${th.to.y}`,
+        th
+      );
+    }
+    for (const th of state.checkmateForensics?.fatalThreats ?? []) {
+      map.set(
+        `${th.from.l}_${th.from.t}_${th.from.x}_${th.from.y}_to_${th.to.l}_${th.to.t}_${th.to.x}_${th.to.y}`,
+        th
+      );
+    }
+    return Array.from(map.values());
+  }, [threats, state.checkmateForensics]);
+
   const threatenedSquaresSet = useMemo(() => {
     const set = new Set<string>();
-    for (const th of threats) {
+    for (const th of allVisibleThreats) {
       set.add(`${th.to.l}_${th.to.t}_${th.to.x}_${th.to.y}`);
     }
     return set;
-  }, [threats]);
+  }, [allVisibleThreats]);
+
+  const attackerSquaresSet = useMemo(() => {
+    const set = new Set<string>();
+    for (const th of allVisibleThreats) {
+      set.add(`${th.from.l}_${th.from.t}_${th.from.x}_${th.from.y}`);
+    }
+    return set;
+  }, [allVisibleThreats]);
+
+  const radarKingSquaresSet = useMemo(() => {
+    const set = new Set<string>();
+    for (const rw of radarWarnings) {
+      set.add(`${rw.kingCoord.l}_${rw.kingCoord.t}_${rw.kingCoord.x}_${rw.kingCoord.y}`);
+    }
+    return set;
+  }, [radarWarnings]);
+
+  // Compute vertical bounds of the Symmetric Active Timeline Band
+  const activeBandRows = useMemo(() => {
+    const activeRowIndices = sortedRowsDesc
+      .map((l, idx) => (activeTimelines.has(l) ? idx : -1))
+      .filter((idx) => idx !== -1);
+    if (activeRowIndices.length === 0) return null;
+    const firstIdx = Math.min(...activeRowIndices);
+    const lastIdx = Math.max(...activeRowIndices);
+    return {
+      top: firstIdx * rowPitch - 14,
+      height: (lastIdx - firstIdx) * rowPitch + boardHeight + 28,
+    };
+  }, [sortedRowsDesc, activeTimelines, rowPitch, boardHeight]);
 
   // Pointer pan handlers
   const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    // Only initiate pan if not clicking a square button or control button
     if ((e.target as HTMLElement).closest('button')) return;
     setIsDragging(true);
     dragStartRef.current = {
@@ -207,7 +312,6 @@ export const MultiverseViewport: React.FC<MultiverseViewportProps> = ({
     }
   };
 
-  // Collect historical & staged time-travel moves for vector rendering
   const visibleTimeMoves = useMemo(() => {
     const list: { move: Move5D; isStaged: boolean }[] = [];
     if (showAllHistoryVectors) {
@@ -231,6 +335,34 @@ export const MultiverseViewport: React.FC<MultiverseViewportProps> = ({
     }
     return list;
   }, [state.moveHistory, state.stagedMoves, showAllHistoryVectors]);
+
+  // Compute coordinates for Ghost Preview Board when hovering a time-travel move
+  const ghostBoardBox = useMemo(() => {
+    if (!ghostPreview || hoveredMove?.kind === 'spatial') return null;
+    const gL = ghostPreview.ghostBoardCoord.l;
+    const gT = ghostPreview.ghostBoardCoord.t;
+    const left = gT * colPitch;
+    let top = 0;
+    const existingRowIdx = sortedRowsDesc.indexOf(gL);
+    if (existingRowIdx !== -1) {
+      top = existingRowIdx * rowPitch;
+    } else if (gL > 0) {
+      // New positive timeline (+L1, +L2...) will appear one row above the current top row
+      top = -rowPitch;
+    } else {
+      // New negative timeline (-L1, -L2...) will appear one row below the current bottom row
+      top = sortedRowsDesc.length * rowPitch;
+    }
+    return {
+      left,
+      top,
+      l: gL,
+      t: gT,
+      isBranch: ghostPreview.willBranchNewTimeline,
+      isActive: ghostPreview.isNewTimelineActive ?? true,
+      nextPresentStep: ghostPreview.nextPresentStep,
+    };
+  }, [ghostPreview, hoveredMove, colPitch, rowPitch, sortedRowsDesc]);
 
   const totalCanvasWidth = (maxStep + 3) * colPitch;
   const totalCanvasHeight = Math.max(2, sortedRowsDesc.length + 1) * rowPitch;
@@ -269,6 +401,26 @@ export const MultiverseViewport: React.FC<MultiverseViewportProps> = ({
         }}
         className="relative"
       >
+        {/* 0. Symmetric Active Timeline Band (Covers Mandatory Active Zone [-maxActiveSide .. +maxActiveSide]) */}
+        {activeBandRows && state.timelineOrder.length > 1 && (
+          <div
+            style={{
+              left: `-134px`,
+              top: `${activeBandRows.top}px`,
+              width: `${(maxStep + 1) * colPitch + 150}px`,
+              height: `${activeBandRows.height}px`,
+            }}
+            className="pointer-events-none absolute rounded-2xl border border-purple-500/35 bg-purple-950/[0.12] transition-all duration-200"
+          >
+            <div className="absolute -top-3 left-3 px-2 py-0.5 rounded bg-[#1E1B4B] border border-purple-400/60 text-[9px] font-mono font-bold text-purple-200 tracking-wider shadow">
+              对称激活光带 · ACTIVE ZONE{' '}
+              {timelineBounds.activationDelta >= 99
+                ? '[全部时间线激活]'
+                : `[${formatTimelineLabel(-timelineBounds.maxActiveSide)} .. ${formatTimelineLabel(timelineBounds.maxActiveSide)}] (相差 ≤${timelineBounds.activationDelta} 强制走子区间)`}
+            </div>
+          </div>
+        )}
+
         {/* 1. "THE PRESENT" Vertical Column Pillar */}
         <div
           style={{
@@ -297,30 +449,47 @@ export const MultiverseViewport: React.FC<MultiverseViewportProps> = ({
                 submitStatus.canSubmit ? 'text-emerald-200' : 'text-amber-300'
               }`}
             >
-              {t('present').toUpperCase()} · {formatTurnStep(state.presentStep)}
+              {i18nT('thePresent')} · {formatTurnStep(state.presentStep)}
             </span>
-            {submitStatus.canSubmit && (
+            {submitStatus.canSubmit && !state.winner && (
               <button
                 type="button"
                 onClick={onSubmitTurn}
                 className="px-2 py-0.5 rounded bg-amber-400 hover:bg-amber-300 text-slate-950 font-mono text-[10px] font-bold tracking-wide shadow cursor-pointer"
               >
-                {t('submitTurn')} ↵
+                {i18nT('submitTurn')} ↵
               </button>
             )}
           </div>
         </div>
 
+        {/* 1B. Ghost Present Column Shift Indicator (When hovering a move that shifts The Present) */}
+        {ghostPreview && ghostPreview.nextPresentStep !== state.presentStep && (
+          <div
+            style={{
+              left: `${ghostPreview.nextPresentStep * colPitch - 8}px`,
+              top: `-64px`,
+              width: `${boardWidth + 16}px`,
+              height: `${sortedRowsDesc.length * rowPitch + 20}px`,
+            }}
+            className="pointer-events-none absolute rounded-2xl border-2 border-dashed border-cyan-400/80 bg-cyan-500/[0.06] z-10"
+          >
+            <div className="px-2 py-0.5 bg-cyan-950/90 border-b border-cyan-400/50 rounded-t-xl text-[9px] font-mono font-bold text-cyan-200 tracking-wider">
+              NEXT PRESENT · 落子后当前指针 → {formatTurnStep(ghostPreview.nextPresentStep)}
+            </div>
+          </div>
+        )}
+
         {/* 2. Turn Step Column Headers along the top */}
-        {Array.from({ length: maxStep + 1 }, (_, stepT) => {
-          const isPresent = stepT === state.presentStep;
-          const turnNum = Math.floor(stepT / 2) + 1;
-          const isWhiteCol = stepT % 2 === 0;
+        {Array.from({ length: maxStep + 1 }, (_, t) => {
+          const isPresent = t === state.presentStep;
+          const turnNum = Math.floor(t / 2) + 1;
+          const isWhiteCol = t % 2 === 0;
           return (
             <div
-              key={`col_hdr_${stepT}`}
+              key={`col_hdr_${t}`}
               style={{
-                left: `${stepT * colPitch}px`,
+                left: `${t * colPitch}px`,
                 top: `-34px`,
                 width: `${boardWidth}px`,
               }}
@@ -333,7 +502,7 @@ export const MultiverseViewport: React.FC<MultiverseViewportProps> = ({
               }`}
             >
               <span className={isPresent ? 'text-amber-300 font-semibold' : 'text-slate-300'}>
-                {t('turnLabel')} {turnNum}
+                {i18nT('turnLabel')} {turnNum}
               </span>
               <span
                 className={`text-[11px] font-semibold px-1.5 py-0.2 rounded ${
@@ -342,52 +511,105 @@ export const MultiverseViewport: React.FC<MultiverseViewportProps> = ({
                     : 'bg-slate-950 text-sky-300 border border-sky-500/40'
                 }`}
               >
-                {isWhiteCol ? t('white') + ' (W)' : t('black') + ' (B)'}
+                {isWhiteCol ? i18nT('statusWhite') : i18nT('statusBlack')}
               </span>
             </div>
           );
         })}
 
-        {/* 3. Timeline Row Labels on the left (Purple for Active, Creator Color for Inactive per 5D Chess rules) */}
+        {/* 3. Timeline Row Labels on the left (Active Symmetric Zone vs Inactive Optional Zone) */}
         {sortedRowsDesc.map((l, rowIdx) => {
           const tl = state.timelines[l];
           const isActive = activeTimelines.has(l);
           const firstBoardT = tl?.boards[0]?.t ?? 0;
-          const creatorLabel =
-            tl?.createdBy === 'w'
-              ? t('timeline_white_inactive')
-              : tl?.createdBy === 'b'
-                ? t('timeline_black_inactive')
-                : t('timeline_inactive');
           return (
             <div
               key={`row_hdr_${l}`}
               style={{
-                left: `${firstBoardT * colPitch - 122}px`,
-                top: `${rowIdx * rowPitch + boardHeight / 2 - 26}px`,
-                width: '108px',
+                left: `${firstBoardT * colPitch - 126}px`,
+                top: `${rowIdx * rowPitch + boardHeight / 2 - 30}px`,
+                width: '114px',
               }}
-              className={`pointer-events-none absolute px-3 py-2 rounded-lg border text-right font-mono transition-colors ${
+              className={`pointer-events-none absolute px-2.5 py-2 rounded-lg border text-right font-mono transition-colors ${
                 isActive
-                  ? 'bg-[#1E1B4B]/95 border-purple-500/70 text-slate-100 shadow-[0_0_14px_rgba(168,85,247,0.2)]'
+                  ? 'bg-[#1E1B4B]/95 border-purple-500/75 text-slate-100 shadow-[0_0_14px_rgba(168,85,247,0.22)]'
                   : tl?.createdBy === 'w'
-                    ? 'bg-slate-800/85 border-slate-300/60 text-slate-200'
-                    : 'bg-slate-950/85 border-sky-500/45 text-sky-300'
+                    ? 'bg-slate-900/90 border-dashed border-slate-400/70 text-slate-200'
+                    : 'bg-slate-950/90 border-dashed border-sky-500/60 text-sky-300'
               }`}
             >
-              <div className="text-sm font-bold tracking-tight">
-                {formatTimelineLabel(l)}
+              <div className="text-sm font-bold tracking-tight flex items-center justify-end gap-1">
+                <span>{formatTimelineLabel(l)}</span>
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    isActive ? 'bg-purple-400' : 'bg-amber-400/80'
+                  }`}
+                />
               </div>
               <div
-                className={`text-[10px] ${
-                  isActive ? 'text-purple-300 font-semibold' : 'text-slate-400'
+                className={`text-[9px] leading-tight mt-0.5 ${
+                  isActive ? 'text-purple-300 font-semibold' : 'text-amber-300 font-semibold'
                 }`}
               >
-                {isActive ? t('timeline_active') : creatorLabel}
+                {isActive ? i18nT('statusActive') : i18nT('statusInactive')}
               </div>
             </div>
           );
         })}
+
+        {/* 3B. Ghost Preview Board Card (When hovering a time-travel move) */}
+        {ghostBoardBox && hoveredMove && (
+          <div
+            style={{
+              left: `${ghostBoardBox.left}px`,
+              top: `${ghostBoardBox.top}px`,
+              width: `${boardWidth}px`,
+              height: `${boardHeight}px`,
+            }}
+            className="pointer-events-none absolute rounded-xl border-[3px] border-dashed border-cyan-400 bg-cyan-950/35 shadow-[0_0_30px_rgba(34,211,238,0.28)] flex flex-col items-center justify-between p-3 z-20"
+          >
+            <div className="w-full flex items-center justify-between border-b border-cyan-400/40 pb-1.5 text-[10px] font-mono">
+              <span className="font-bold text-cyan-200">
+                {ghostBoardBox.isBranch
+                  ? `幽灵分叉 · NEW ${formatTimelineLabel(ghostBoardBox.l)}`
+                  : `幽灵跳跃 · ${formatTimelineLabel(ghostBoardBox.l)}`}
+              </span>
+              <span
+                className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                  ghostBoardBox.isActive
+                    ? 'bg-purple-600 text-white'
+                    : 'bg-slate-800 text-amber-300 border border-amber-400/50'
+                }`}
+              >
+                {ghostBoardBox.isActive ? 'ACTIVE · 激活' : 'INACTIVE · 可选'}
+              </span>
+            </div>
+
+            <div className="text-center space-y-1 my-auto">
+              <div className="w-10 h-10 mx-auto rounded-lg bg-cyan-900/50 border border-cyan-400/60 flex items-center justify-center">
+                <ChessPieceSVG
+                  type={hoveredMove.promotedTo ?? hoveredMove.piece.type}
+                  color={hoveredMove.piece.color}
+                  className="w-7 h-7"
+                />
+              </div>
+              <div className="text-xs font-mono font-bold text-cyan-100">
+                {formatTimelineLabel(ghostBoardBox.l)} · {formatTurnStep(ghostBoardBox.t)}
+              </div>
+              <div className="text-[10px] font-mono text-cyan-300">
+                落点: {formatSquare(hoveredMove.to.x, hoveredMove.to.y)}
+              </div>
+            </div>
+
+            <div className="w-full text-center text-[9px] font-mono text-slate-300 bg-slate-950/80 rounded px-2 py-1 border border-cyan-500/30">
+              {ghostBoardBox.isBranch
+                ? ghostBoardBox.isActive
+                  ? `分叉差 ≤${timelineBounds.activationDelta >= 99 ? '∞' : timelineBounds.activationDelta}：此新时间线立即激活 (Active)`
+                  : `分叉差 >${timelineBounds.activationDelta}：超出对称上限，暂为可选 (Inactive)`
+                : '跳跃至平行时间线当前棋盘'}
+            </div>
+          </div>
+        )}
 
         {/* 4. SVG Underlay: Timeline Connectors & Branching Elbows */}
         <svg
@@ -425,7 +647,6 @@ export const MultiverseViewport: React.FC<MultiverseViewportProps> = ({
             if (!tl) return null;
             return (
               <g key={`tl_lines_${l}`}>
-                {/* Sequential horizontal board connectors */}
                 {tl.boards.map((b, idx) => {
                   if (idx === 0) return null;
                   const prev = tl.boards[idx - 1];
@@ -446,7 +667,6 @@ export const MultiverseViewport: React.FC<MultiverseViewportProps> = ({
                   );
                 })}
 
-                {/* Branch origin connector from parent timeline */}
                 {tl.parentTimeline !== undefined &&
                   tl.branchFromStep !== undefined &&
                   tl.boards.length > 0 && (() => {
@@ -489,15 +709,10 @@ export const MultiverseViewport: React.FC<MultiverseViewportProps> = ({
             const boardLeft = board.t * colPitch;
             const boardTop = rowIdx * rowPitch;
 
-            // Check if this board has any legal target squares for the currently selected piece
             const hasLegalTargetsOnBoard = legalMovesForSelected.some(
               (m) => m.to.l === board.l && m.to.t === board.t
             );
 
-            // Authentic 5D Chess Board Outlines:
-            // - Playable boards (board.isLeaf === true) have a THICK border (border-[3px]).
-            // - Unplayable / History boards (board.isLeaf === false) have a THIN border (border).
-            // - White boards (activeColor === 'w') vs Black boards (activeColor === 'b') have distinct frame colors.
             let cardFrameClass = '';
             if (pStatus.isMandatoryPresent) {
               cardFrameClass = isWhiteBoard
@@ -506,7 +721,7 @@ export const MultiverseViewport: React.FC<MultiverseViewportProps> = ({
             } else if (pStatus.isOptionalPlayable) {
               cardFrameClass = pStatus.isTimelineActive
                 ? 'bg-slate-900 border-[3px] border-emerald-400 shadow-[0_0_20px_rgba(16,185,129,0.25)]'
-                : 'bg-slate-900 border-[3px] border-purple-400/90 shadow-[0_0_18px_rgba(168,85,247,0.22)]';
+                : 'bg-slate-900 border-[3px] border-dashed border-amber-400/90 shadow-[0_0_18px_rgba(245,158,11,0.2)]';
             } else if (hasLegalTargetsOnBoard) {
               cardFrameClass =
                 'bg-slate-900/95 border-[3px] border-purple-400 shadow-[0_0_24px_rgba(168,85,247,0.35)]';
@@ -515,16 +730,13 @@ export const MultiverseViewport: React.FC<MultiverseViewportProps> = ({
                 ? 'bg-slate-900 border-[3px] border-slate-200 shadow-[0_0_18px_rgba(226,232,240,0.22)]'
                 : 'bg-slate-950 border-[3px] border-sky-400/85 shadow-[0_0_18px_rgba(56,189,248,0.22)]';
             } else if (pStatus.isPlayableBoard) {
-              // Playable leaf board belonging to the other color's turn (Thick White or Black border)
               cardFrameClass = isWhiteBoard
                 ? 'bg-slate-900/95 border-[3px] border-slate-200/90 shadow-md'
                 : 'bg-slate-950/95 border-[3px] border-sky-500/75 shadow-md';
             } else if (pStatus.isStagedOriginThisTurn) {
-              // Origin board of a staged move this turn (can click to revise)
               cardFrameClass =
                 'bg-slate-900/90 border-2 border-dashed border-amber-400/70 opacity-95';
             } else {
-              // Unplayable History Board (Thin White-tinted or Black-tinted border)
               cardFrameClass = isWhiteBoard
                 ? 'bg-slate-900/80 border border-slate-500/60 opacity-90'
                 : 'bg-slate-950/85 border border-slate-800 opacity-90';
@@ -545,7 +757,7 @@ export const MultiverseViewport: React.FC<MultiverseViewportProps> = ({
                 }}
                 className={`absolute rounded-xl transition-all duration-150 flex flex-col ${cardFrameClass}`}
               >
-                {/* Board Header Bar — Distinct Light Header Pill for White Boards, Dark Pill for Black Boards */}
+                {/* Board Header Bar */}
                 <div
                   style={{ height: `${boardHeaderHeight}px` }}
                   className={`px-2 flex items-center justify-between border-b text-[10px] font-mono shrink-0 rounded-t-[9px] ${
@@ -574,45 +786,45 @@ export const MultiverseViewport: React.FC<MultiverseViewportProps> = ({
                   <div className="flex items-center gap-1">
                     {hasLegalTargetsOnBoard && !pStatus.isCurrentPlayerTurnOnBoard ? (
                       <span className="text-[9px] font-bold text-purple-300 tracking-tight">
-                        {t('badge_time_target')}
+                        TIME TARGET
                       </span>
                     ) : pStatus.isMandatoryPresent ? (
                       <span className="text-[9px] font-bold text-amber-300 tracking-tight">
-                        {t('badge_playable_present')}
+                        {i18nT('status_playable_present')}
                       </span>
                     ) : pStatus.isOptionalPlayable ? (
                       <span
                         className={`text-[9px] font-bold tracking-tight ${
-                          pStatus.isTimelineActive ? 'text-emerald-300' : 'text-purple-300'
+                          pStatus.isTimelineActive ? 'text-emerald-300' : 'text-amber-300'
                         }`}
                       >
-                        {t(pStatus.statusLabel as any)}
+                        {i18nT(pStatus.statusLabel)}
                       </span>
                     ) : pStatus.isStagedResultThisTurn ? (
                       <div className="flex items-center gap-1">
                         <span className="text-[9px] font-bold text-sky-300">
-                          {t('badge_staged')}
+                          {i18nT('status_staged')}
                         </span>
                         <button
                           type="button"
                           onClick={onUndoStaged}
                           className="px-1 py-0.2 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/40 text-[9px] font-bold cursor-pointer"
-                          title={t('undoStagedMoveTitle')}
+                          title={i18nT("undoStagedTitle")}
                         >
-                          {t('undo')}
+                          Undo
                         </button>
                       </div>
                     ) : pStatus.isStagedOriginThisTurn ? (
                       <span className="text-[9px] font-semibold text-amber-300/90">
-                        {t('badge_moved_revise')}
+                        {i18nT('status_moved_revise')}
                       </span>
                     ) : pStatus.isPlayableBoard ? (
                       <span className="text-[9px] font-semibold text-slate-300">
-                        {t(pStatus.statusLabel as any)}
+                        {i18nT(pStatus.statusLabel)}
                       </span>
                     ) : (
                       <span className="text-[9px] text-slate-400">
-                        {t('badge_history')}
+                        HISTORY
                       </span>
                     )}
                   </div>
@@ -648,22 +860,45 @@ export const MultiverseViewport: React.FC<MultiverseViewportProps> = ({
                         const legalMove = legalMovesMap.get(sqKey);
                         const isTemporalTarget = legalMove && legalMove.kind !== 'spatial';
                         const isKingThreatened = threatenedSquaresSet.has(sqKey);
+                        const isFatalAttacker = attackerSquaresSet.has(sqKey);
+                        const isRadarWarnedKing =
+                          !isKingThreatened && radarKingSquaresSet.has(sqKey);
+                        const isSliceAligned =
+                          activeSliceXY !== null &&
+                          activeSliceXY.x === x &&
+                          activeSliceXY.y === y;
 
-                        // Accessible label for browser snapshot & screen readers
                         const squareName = formatSquare(x, y);
                         const pieceDesc = piece
-                          ? `${piece.color === 'w' ? t('white') : t('black')} ${t(('piece_' + piece.type) as any)}`
-                          : t('emptySquare');
+                          ? `${piece.color === 'w' ? i18nT('white') : i18nT('black')} ${i18nT(('piece_' + piece.type))}`
+                          : i18nT('emptySquare');
                         const targetDesc = legalMove
-                          ? legalMove.kind === 'spatial'
-                            ? t('legalSpatialMove')
-                            : t('legalTimeTravelTarget')
-                          : '';
+                          ? legalMove.isCastling
+                            ? i18nT('legalCastling')
+                            : legalMove.isEnPassant
+                              ? i18nT('legalEnPassant')
+                              : legalMove.kind === 'spatial'
+                                ? i18nT('legalSpatial')
+                                : i18nT('legalTimeTravel')
+                          : isKingThreatened
+                            ? ' · Threatened King'
+                            : isFatalAttacker
+                              ? ' · Checking Attacker'
+                              : isRadarWarnedKing
+                                ? ' · Past-King Radar Warning'
+                                : '';
 
                         return (
                           <button
                             key={sqKey}
                             type="button"
+                            onMouseEnter={() =>
+                              onHoverSquare(
+                                { l: board.l, t: board.t, x, y },
+                                legalMove ?? null
+                              )
+                            }
+                            onMouseLeave={() => onHoverSquare(null, null)}
                             onClick={() =>
                               onSquareClick({ l: board.l, t: board.t, x, y })
                             }
@@ -678,18 +913,24 @@ export const MultiverseViewport: React.FC<MultiverseViewportProps> = ({
                                 isSelected
                                   ? 'bg-amber-500/70'
                                   : isKingThreatened
-                                    ? 'bg-red-600/75 animate-pulse'
-                                    : isTemporalTarget
-                                      ? 'bg-purple-600/45 hover:bg-purple-500/65'
-                                      : legalMove
-                                        ? 'bg-emerald-500/35 hover:bg-emerald-500/55'
-                                        : isLightSquare
-                                          ? board.isLeaf
-                                            ? 'bg-[#334155] hover:bg-[#3E4E66]'
-                                            : 'bg-[#243044] hover:bg-[#2E3C54]'
-                                          : board.isLeaf
-                                            ? 'bg-[#1E293B] hover:bg-[#28354B]'
-                                            : 'bg-[#151D2B] hover:bg-[#1E293B]'
+                                    ? 'bg-red-600/80 ring-2 ring-inset ring-red-300 animate-pulse'
+                                    : isFatalAttacker
+                                      ? 'bg-orange-600/60 ring-2 ring-inset ring-amber-300'
+                                      : isRadarWarnedKing
+                                        ? 'bg-amber-500/40 ring-2 ring-inset ring-amber-300'
+                                        : isTemporalTarget
+                                          ? 'bg-purple-600/45 hover:bg-purple-500/65'
+                                          : legalMove
+                                            ? 'bg-emerald-500/35 hover:bg-emerald-500/55'
+                                            : isSliceAligned
+                                              ? 'bg-cyan-500/25 ring-2 ring-inset ring-cyan-300/90'
+                                              : isLightSquare
+                                                ? board.isLeaf
+                                                  ? 'bg-[#334155] hover:bg-[#3E4E66]'
+                                                  : 'bg-[#243044] hover:bg-[#2E3C54]'
+                                                : board.isLeaf
+                                                  ? 'bg-[#1E293B] hover:bg-[#28354B]'
+                                                  : 'bg-[#151D2B] hover:bg-[#1E293B]'
                               }
                             `}
                           >
@@ -702,6 +943,13 @@ export const MultiverseViewport: React.FC<MultiverseViewportProps> = ({
                             {x === 0 && (
                               <span className="pointer-events-none absolute top-0.5 left-0.5 text-[8px] font-mono text-slate-400/70 leading-none">
                                 {y + 1}
+                              </span>
+                            )}
+
+                            {/* Same-Square Spacetime Slice Coordinate Badge */}
+                            {isSliceAligned && !isSelected && (
+                              <span className="pointer-events-none absolute bottom-0 left-0.5 text-[7px] font-mono font-bold text-cyan-200 leading-none">
+                                {squareName}
                               </span>
                             )}
 
@@ -720,13 +968,38 @@ export const MultiverseViewport: React.FC<MultiverseViewportProps> = ({
                               />
                             )}
 
+                            {/* Checkmate Killer / Doomed King / Radar Warning Micro Callouts */}
+                            {Boolean(state.winner) && isKingThreatened && (
+                              <span className="pointer-events-none absolute -top-1.5 inset-x-0 flex justify-center z-30">
+                                <span className="px-1 py-0.2 rounded bg-red-600 text-white font-mono text-[7px] font-bold tracking-tighter shadow border border-red-200 leading-none whitespace-nowrap">
+                                  被杀 · MATE
+                                </span>
+                              </span>
+                            )}
+                            {Boolean(state.winner) && isFatalAttacker && !isKingThreatened && (
+                              <span className="pointer-events-none absolute -top-1.5 inset-x-0 flex justify-center z-30">
+                                <span className="px-1 py-0.2 rounded bg-amber-500 text-slate-950 font-mono text-[7px] font-bold tracking-tighter shadow border border-amber-200 leading-none whitespace-nowrap">
+                                  凶手 · KILLER
+                                </span>
+                              </span>
+                            )}
+                            {!state.winner && isRadarWarnedKing && (
+                              <span className="pointer-events-none absolute -top-1.5 inset-x-0 flex justify-center z-30">
+                                <span className="px-1 py-0.2 rounded bg-amber-500 text-slate-950 font-mono text-[7px] font-bold tracking-tighter shadow border border-amber-200 leading-none whitespace-nowrap">
+                                  雷达预警 · RADAR
+                                </span>
+                              </span>
+                            )}
+
                             {/* Legal Move Target Reticle / Portal Ring */}
                             {legalMove && !piece && (
                               <span
                                 className={`pointer-events-none rounded-full ${
                                   isTemporalTarget
                                     ? 'w-3.5 h-3.5 bg-purple-300 ring-2 ring-amber-300 animate-pulse-subtle'
-                                    : 'w-2.5 h-2.5 bg-emerald-300/90'
+                                    : legalMove.isCastling || legalMove.isEnPassant
+                                      ? 'w-3 h-3 bg-cyan-300 ring-2 ring-white'
+                                      : 'w-2.5 h-2.5 bg-emerald-300/90'
                                 }`}
                               />
                             )}
@@ -752,7 +1025,7 @@ export const MultiverseViewport: React.FC<MultiverseViewportProps> = ({
           });
         })}
 
-        {/* 6. SVG Overlay: Cross-Spacetime Time-Travel Arcs, Preview Rays, and Check Threat Vectors */}
+        {/* 6. SVG Overlay: Cross-Spacetime Time-Travel Arcs, Preview Rays, Radar Lines, and Check Threat Vectors */}
         <svg
           width={totalCanvasWidth}
           height={totalCanvasHeight}
@@ -769,6 +1042,17 @@ export const MultiverseViewport: React.FC<MultiverseViewportProps> = ({
               orient="auto-start-reverse"
             >
               <path d="M 0 1 L 10 5 L 0 9 z" fill="#C084FC" />
+            </marker>
+            <marker
+              id="arrow-ghost"
+              viewBox="0 0 10 10"
+              refX="8"
+              refY="5"
+              markerWidth="6"
+              markerHeight="6"
+              orient="auto-start-reverse"
+            >
+              <path d="M 0 1 L 10 5 L 0 9 z" fill="#22D3EE" />
             </marker>
             <marker
               id="arrow-staged"
@@ -794,6 +1078,27 @@ export const MultiverseViewport: React.FC<MultiverseViewportProps> = ({
             </marker>
           </defs>
 
+          {/* Past-King Danger Radar Alignment Lines (Amber dotted warning rays) */}
+          {!state.winner &&
+            radarWarnings.map((rw, idx) => {
+              const p1 = getSquareCenterPx(rw.attackerCoord);
+              const p2 = getSquareCenterPx(rw.kingCoord);
+              if (!p1 || !p2) return null;
+              return (
+                <line
+                  key={`radar_${idx}`}
+                  x1={p1.cx}
+                  y1={p1.cy}
+                  x2={p2.cx}
+                  y2={p2.cy}
+                  stroke="#F59E0B"
+                  strokeWidth="1.8"
+                  strokeDasharray="3 6"
+                  opacity="0.55"
+                />
+              );
+            })}
+
           {/* Preview Rays for Currently Selected Piece's Time-Travel Targets */}
           {selectedCoord &&
             legalMovesForSelected
@@ -802,6 +1107,7 @@ export const MultiverseViewport: React.FC<MultiverseViewportProps> = ({
                 const p1 = getSquareCenterPx(m.from);
                 const p2 = getSquareCenterPx(m.to);
                 if (!p1 || !p2) return null;
+                const isHovered = hoveredMove?.id === m.id;
                 const midX = (p1.cx + p2.cx) / 2;
                 const midY = Math.min(p1.cy, p2.cy) - 55;
                 return (
@@ -809,14 +1115,32 @@ export const MultiverseViewport: React.FC<MultiverseViewportProps> = ({
                     key={`preview_${m.id}`}
                     d={`M ${p1.cx} ${p1.cy} Q ${midX} ${midY} ${p2.cx} ${p2.cy}`}
                     fill="none"
-                    stroke="#C084FC"
-                    strokeWidth="2.2"
+                    stroke={isHovered ? '#22D3EE' : '#C084FC'}
+                    strokeWidth={isHovered ? '3.5' : '2.2'}
                     strokeDasharray="5 4"
-                    opacity="0.85"
-                    markerEnd="url(#arrow-timejump)"
+                    opacity={isHovered ? '1' : '0.8'}
+                    markerEnd={isHovered ? 'url(#arrow-ghost)' : 'url(#arrow-timejump)'}
                   />
                 );
               })}
+
+          {/* Ghost Branch Connector from Target Historical Board to Ghost New Timeline Board */}
+          {ghostBoardBox && hoveredMove && (() => {
+            const pTarget = getSquareCenterPx(hoveredMove.to);
+            if (!pTarget) return null;
+            const ghostCenterX = ghostBoardBox.left + boardWidth / 2;
+            const ghostCenterY = ghostBoardBox.top + boardHeight / 2;
+            return (
+              <path
+                d={`M ${pTarget.cx} ${pTarget.cy} C ${pTarget.cx} ${ghostCenterY}, ${(pTarget.cx + ghostCenterX) / 2} ${ghostCenterY}, ${ghostBoardBox.left} ${ghostCenterY}`}
+                fill="none"
+                stroke="#22D3EE"
+                strokeWidth="3"
+                strokeDasharray="6 4"
+                markerEnd="url(#arrow-ghost)"
+              />
+            );
+          })()}
 
           {/* Executed & Staged Time-Travel Vectors */}
           {visibleTimeMoves.map(({ move, isStaged }) => {
@@ -855,23 +1179,77 @@ export const MultiverseViewport: React.FC<MultiverseViewportProps> = ({
             );
           })}
 
-          {/* Active Spacetime Check Threat Vectors */}
-          {threats.map((th, idx) => {
+          {/* Active & Fatal Spacetime Check Threat Vectors */}
+          {allVisibleThreats.map((th, idx) => {
             const p1 = getSquareCenterPx(th.from);
             const p2 = getSquareCenterPx(th.to);
             if (!p1 || !p2) return null;
+            const midX = (p1.cx + p2.cx) / 2;
+            const midY = (p1.cy + p2.cy) / 2;
             return (
-              <line
-                key={`threat_${idx}`}
-                x1={p1.cx}
-                y1={p1.cy}
-                x2={p2.cx}
-                y2={p2.cy}
-                stroke="#EF4444"
-                strokeWidth="3"
-                strokeDasharray="6 3"
-                markerEnd="url(#arrow-threat)"
-              />
+              <g key={`threat_${idx}`}>
+                <line
+                  x1={p1.cx}
+                  y1={p1.cy}
+                  x2={p2.cx}
+                  y2={p2.cy}
+                  stroke="#EF4444"
+                  strokeWidth={state.winner ? '8' : '5'}
+                  opacity="0.28"
+                  strokeLinecap="round"
+                />
+                <line
+                  x1={p1.cx}
+                  y1={p1.cy}
+                  x2={p2.cx}
+                  y2={p2.cy}
+                  stroke="#F87171"
+                  strokeWidth={state.winner ? '3.5' : '3'}
+                  strokeDasharray="7 4"
+                  markerEnd="url(#arrow-threat)"
+                />
+                <circle
+                  cx={p1.cx}
+                  cy={p1.cy}
+                  r="6"
+                  fill="#F59E0B"
+                  stroke="#FEF3C7"
+                  strokeWidth="1.5"
+                />
+                <circle
+                  cx={p2.cx}
+                  cy={p2.cy}
+                  r="7"
+                  fill="none"
+                  stroke="#EF4444"
+                  strokeWidth="2.5"
+                />
+                {Boolean(state.winner) && idx === 0 && (
+                  <g transform={`translate(${midX}, ${midY - 12})`}>
+                    <rect
+                      x="-64"
+                      y="-11"
+                      width="128"
+                      height="20"
+                      rx="6"
+                      fill="#7F1D1D"
+                      stroke="#F87171"
+                      strokeWidth="1.2"
+                    />
+                    <text
+                      x="0"
+                      y="2"
+                      textAnchor="middle"
+                      fill="#FEE2E2"
+                      fontSize="9"
+                      fontFamily="monospace"
+                      fontWeight="bold"
+                    >
+                      {th.isCrossTimeline ? '跨时空绝杀线 · FATAL' : '空间绝杀线 · MATE'}
+                    </text>
+                  </g>
+                )}
+              </g>
             );
           })}
         </svg>
@@ -882,7 +1260,7 @@ export const MultiverseViewport: React.FC<MultiverseViewportProps> = ({
         <button
           type="button"
           onClick={() => setZoom((z) => Math.max(0.55, Number((z - 0.15).toFixed(2))))}
-          aria-label={t('zoomOut')}
+          aria-label="Zoom Out Multiverse"
           className="px-2.5 py-1 text-xs font-mono font-semibold text-slate-300 hover:text-white hover:bg-slate-800 rounded cursor-pointer"
         >
           -
@@ -893,7 +1271,7 @@ export const MultiverseViewport: React.FC<MultiverseViewportProps> = ({
         <button
           type="button"
           onClick={() => setZoom((z) => Math.min(1.5, Number((z + 0.15).toFixed(2))))}
-          aria-label={t('zoomIn')}
+          aria-label="Zoom In Multiverse"
           className="px-2.5 py-1 text-xs font-mono font-semibold text-slate-300 hover:text-white hover:bg-slate-800 rounded cursor-pointer"
         >
           +
@@ -916,8 +1294,34 @@ export const MultiverseViewport: React.FC<MultiverseViewportProps> = ({
           }}
           className="px-2.5 py-1 text-xs font-mono text-amber-300 hover:bg-slate-800 rounded cursor-pointer whitespace-nowrap"
         >
-          {t('centerOnPresent')}
+          {i18nT('centerOnPresent')}
         </button>
+        {allVisibleThreats.length > 0 && (
+          <>
+            <div className="w-px h-4 bg-slate-800 mx-0.5" />
+            <button
+              type="button"
+              onClick={() => {
+                const el = containerRef.current;
+                if (!el) return;
+                const rect = el.getBoundingClientRect();
+                const th = allVisibleThreats[0];
+                const p1 = getSquareCenterPx(th.from);
+                const p2 = getSquareCenterPx(th.to);
+                if (!p1 || !p2) return;
+                const midX = (p1.cx + p2.cx) / 2;
+                const midY = (p1.cy + p2.cy) / 2;
+                setPan({
+                  x: Math.round(rect.width * 0.5 - midX * zoom),
+                  y: Math.round(rect.height * 0.52 - midY * zoom),
+                });
+              }}
+              className="px-2.5 py-1 text-xs font-mono font-bold text-red-300 bg-red-950/80 hover:bg-red-900 border border-red-500/60 rounded cursor-pointer whitespace-nowrap"
+            >
+              定位绝杀 · Focus Threat
+            </button>
+          </>
+        )}
       </div>
     </div>
   );

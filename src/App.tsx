@@ -5,10 +5,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AIPersona,
   Coord5D,
   Move5D,
   MultiverseState,
   OpponentMode,
+  PieceType,
+  PromotionRule,
+  TimelineActivationDelta,
   VariantId,
 } from './game/types';
 import {
@@ -16,12 +20,17 @@ import {
   canSubmitCurrentTurn,
   computeAITurn,
   createInitialMultiverse,
-  findThreatsToColorKings,
+  findActiveAndImpendingThreats,
+  findPastKingRadarWarnings,
   getBoard,
   getLegalMovesForSquare,
+  rewindToTurnIndex,
+  setRulesConfigPure,
   submitTurnPure,
   undoLastStagedMove,
+  undoLastTurn,
   undoStagedMovesBackToBoard,
+  withPromotedPiece,
 } from './game/engine';
 import { soundFX } from './game/sound';
 import { TitleScreen } from './components/TitleScreen';
@@ -39,22 +48,36 @@ export default function App() {
 
   const [selectedVariant, setSelectedVariant] = useState<VariantId>('tactical_5x5');
   const [opponentMode, setOpponentMode] = useState<OpponentMode>('ai');
+  const [aiPersona, setAiPersona] = useState<AIPersona>('tactician');
+  const [promotionRule, setPromotionRule] = useState<PromotionRule>('choose_piece');
+  const [timelineActivationDelta, setTimelineActivationDelta] =
+    useState<TimelineActivationDelta>(2);
   const [gameState, setGameState] = useState<ShellState>(
     initialAutostart ? 'playing' : 'title'
   );
   const [multiverse, setMultiverse] = useState<MultiverseState>(() =>
-    createInitialMultiverse('tactical_5x5', 'ai')
+    createInitialMultiverse('tactical_5x5', 'ai', 'tactician', 'choose_piece', 2)
   );
   const [selectedCoord, setSelectedCoord] = useState<Coord5D | null>(null);
+  const [hoveredCoord, setHoveredCoord] = useState<Coord5D | null>(null);
+  const [hoveredMove, setHoveredMove] = useState<Move5D | null>(null);
+  const [pendingPromotionMove, setPendingPromotionMove] = useState<Move5D | null>(null);
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [showAllHistoryVectors, setShowAllHistoryVectors] = useState<boolean>(true);
+  const [sliceHighlightEnabled, setSliceHighlightEnabled] = useState<boolean>(false);
+  const [showMoveLogDrawer, setShowMoveLogDrawer] = useState<boolean>(false);
   const [showGuideModal, setShowGuideModal] = useState<boolean>(false);
   const [aiThinking, setAiThinking] = useState<boolean>(false);
   const [focusPresentSignal, setFocusPresentSignal] = useState<number>(1);
+  const [focusBoardTarget, setFocusBoardTarget] = useState<{
+    l: number;
+    t: number;
+    seq: number;
+  } | null>(null);
 
   const aiTimerRef = useRef<number | null>(null);
 
-  // Sync gameState to document.body.dataset.state per game_title_and_hud.md
+  // Sync gameState to document.body.dataset.state
   useEffect(() => {
     document.body.dataset.state = gameState;
   }, [gameState]);
@@ -79,11 +102,18 @@ export default function App() {
     return board?.squares[selectedCoord.y]?.[selectedCoord.x] ?? null;
   }, [multiverse, selectedCoord]);
 
-  // Compute active spacetime threats on either player's Kings
+  // Compute active and impending spacetime threats on either player's Kings
   const activeThreats = useMemo(() => {
-    const wThreats = findThreatsToColorKings(multiverse, 'w');
-    const bThreats = findThreatsToColorKings(multiverse, 'b');
+    const wThreats = findActiveAndImpendingThreats(multiverse, 'w');
+    const bThreats = findActiveAndImpendingThreats(multiverse, 'b');
     return [...wThreats, ...bThreats];
+  }, [multiverse]);
+
+  // Compute Past-King Danger Radar warnings
+  const radarWarnings = useMemo(() => {
+    const wRadar = findPastKingRadarWarnings(multiverse, 'w');
+    const bRadar = findPastKingRadarWarnings(multiverse, 'b');
+    return [...wRadar, ...bRadar];
   }, [multiverse]);
 
   // Trigger AI Chronomancer when it is Black's turn in 'ai' mode
@@ -122,47 +152,119 @@ export default function App() {
 
   const handleStartGame = useCallback(() => {
     if (aiTimerRef.current) clearTimeout(aiTimerRef.current);
-    const fresh = createInitialMultiverse(selectedVariant, opponentMode);
+    const fresh = createInitialMultiverse(
+      selectedVariant,
+      opponentMode,
+      aiPersona,
+      promotionRule,
+      timelineActivationDelta
+    );
     setMultiverse(fresh);
     setSelectedCoord(null);
+    setHoveredCoord(null);
+    setHoveredMove(null);
+    setPendingPromotionMove(null);
     setShowGuideModal(false);
     setAiThinking(false);
     document.body.dataset.state = 'playing';
     setGameState('playing');
     setFocusPresentSignal((s) => s + 1);
     soundFX.playSubmitTurn();
-  }, [selectedVariant, opponentMode]);
+  }, [
+    selectedVariant,
+    opponentMode,
+    aiPersona,
+    promotionRule,
+    timelineActivationDelta,
+  ]);
 
   const handleRestartMatch = useCallback(() => {
     if (aiTimerRef.current) clearTimeout(aiTimerRef.current);
-    const fresh = createInitialMultiverse(multiverse.variant, multiverse.opponentMode);
+    const fresh = createInitialMultiverse(
+      multiverse.variant,
+      multiverse.opponentMode,
+      multiverse.aiPersona,
+      multiverse.promotionRule,
+      multiverse.timelineActivationDelta
+    );
     setMultiverse(fresh);
     setSelectedCoord(null);
+    setHoveredCoord(null);
+    setHoveredMove(null);
+    setPendingPromotionMove(null);
     setShowGuideModal(false);
     setAiThinking(false);
     document.body.dataset.state = 'playing';
     setGameState('playing');
     setFocusPresentSignal((s) => s + 1);
     soundFX.playSelect();
-  }, [multiverse.variant, multiverse.opponentMode]);
+  }, [
+    multiverse.variant,
+    multiverse.opponentMode,
+    multiverse.aiPersona,
+    multiverse.promotionRule,
+    multiverse.timelineActivationDelta,
+  ]);
 
   const handleChangeVariantInHUD = useCallback(
     (newVariant: VariantId) => {
       if (aiTimerRef.current) clearTimeout(aiTimerRef.current);
       setSelectedVariant(newVariant);
-      const fresh = createInitialMultiverse(newVariant, multiverse.opponentMode);
+      const fresh = createInitialMultiverse(
+        newVariant,
+        multiverse.opponentMode,
+        multiverse.aiPersona,
+        multiverse.promotionRule,
+        multiverse.timelineActivationDelta
+      );
       setMultiverse(fresh);
       setSelectedCoord(null);
+      setHoveredCoord(null);
+      setHoveredMove(null);
+      setPendingPromotionMove(null);
       setAiThinking(false);
       document.body.dataset.state = 'playing';
       setGameState('playing');
       setFocusPresentSignal((s) => s + 1);
       soundFX.playSelect();
     },
-    [multiverse.opponentMode]
+    [
+      multiverse.opponentMode,
+      multiverse.aiPersona,
+      multiverse.promotionRule,
+      multiverse.timelineActivationDelta,
+    ]
   );
 
-  const handleExecuteMove = useCallback((move: Move5D) => {
+  const handleChangeAiPersonaInHUD = useCallback((newPersona: AIPersona) => {
+    setAiPersona(newPersona);
+    setMultiverse((prev) => ({
+      ...prev,
+      aiPersona: newPersona,
+    }));
+    soundFX.playSelect();
+  }, []);
+
+  const handleChangePromotionRuleInHUD = useCallback((newRule: PromotionRule) => {
+    setPromotionRule(newRule);
+    setMultiverse((prev) =>
+      setRulesConfigPure(prev, newRule, prev.timelineActivationDelta)
+    );
+    soundFX.playSelect();
+  }, []);
+
+  const handleChangeTimelineActivationDeltaInHUD = useCallback(
+    (newDelta: TimelineActivationDelta) => {
+      setTimelineActivationDelta(newDelta);
+      setMultiverse((prev) =>
+        setRulesConfigPure(prev, prev.promotionRule, newDelta)
+      );
+      soundFX.playSelect();
+    },
+    []
+  );
+
+  const commitMoveNow = useCallback((move: Move5D) => {
     setMultiverse((prev) => {
       // Never allow the human to move Black's pieces in AI (vs. Chronomancer) mode,
       // even if a stale selection or a stalled AI turn left turnColor === 'b'.
@@ -176,17 +278,66 @@ export default function App() {
       return next;
     });
     setSelectedCoord(null);
+    setHoveredMove(null);
+    setPendingPromotionMove(null);
   }, []);
+
+  const handleExecuteMove = useCallback(
+    (move: Move5D) => {
+      if (move.promotedTo !== undefined && multiverse.promotionRule === 'choose_piece') {
+        soundFX.playSelect();
+        setPendingPromotionMove(move);
+        setHoveredMove(null);
+        return;
+      }
+      commitMoveNow(move);
+    },
+    [multiverse.promotionRule, commitMoveNow]
+  );
+
+  const handleConfirmPromotion = useCallback(
+    (pieceType: PieceType) => {
+      if (!pendingPromotionMove) return;
+      const updatedMove = withPromotedPiece(pendingPromotionMove, pieceType);
+      commitMoveNow(updatedMove);
+    },
+    [pendingPromotionMove, commitMoveNow]
+  );
+
+  const handleCancelPromotion = useCallback(() => {
+    setPendingPromotionMove(null);
+    soundFX.playSelect();
+  }, []);
+
+  const handleHoverSquare = useCallback(
+    (coord: Coord5D | null, matchingMove: Move5D | null) => {
+      setHoveredCoord(coord);
+      setHoveredMove(matchingMove);
+    },
+    []
+  );
 
   const handleSquareClick = useCallback(
     (coord: Coord5D) => {
-      if (gameState !== 'playing' || aiThinking || multiverse.winner) return;
+      if (aiThinking || gameState === 'paused' || gameState === 'title') return;
       // In AI (vs. Chronomancer) mode the human controls White only. Even if the AI
-      // somehow stalls or the aiThinking flag has not flipped yet, the human must
-      // NEVER be able to select or move Black's pieces. Without this guard, a check
-      // where Black is in check could be "helped" by the human dragging Black's king,
-      // which is not allowed in a human-vs-AI game.
+      // stalls or aiThinking has not flipped, the human must NEVER select or move
+      // Black's pieces.
       if (multiverse.opponentMode === 'ai' && multiverse.turnColor === 'b') return;
+
+      const clickedBoard = getBoard(multiverse, coord.l, coord.t);
+
+      // If match has ended (Checkmate / Stalemate), allow inspecting any piece on any board
+      if (multiverse.winner || gameState === 'gameover') {
+        const piece = clickedBoard?.squares[coord.y]?.[coord.x];
+        if (piece) {
+          soundFX.playSelect();
+          setSelectedCoord(coord);
+        } else {
+          setSelectedCoord(null);
+        }
+        return;
+      }
 
       // 1. Check if clicking a legal move destination for the currently selected piece
       if (selectedCoord) {
@@ -204,7 +355,6 @@ export default function App() {
       }
 
       // 2. Check if clicking a friendly piece on a playable leaf board
-      const clickedBoard = getBoard(multiverse, coord.l, coord.t);
       if (
         clickedBoard &&
         clickedBoard.isLeaf &&
@@ -228,8 +378,7 @@ export default function App() {
         }
       }
 
-      // 3. If clicking a board that was already moved on during this uncommitted turn
-      // (either the origin board or the newly spawned staged preview board),
+      // 3. If clicking a board that was already moved on during this uncommitted turn,
       // roll back that staged move and select the friendly piece so the user can revise their move directly!
       if (multiverse.stagedMoves.length > 0 && clickedBoard) {
         const stagedOriginMove = multiverse.stagedMoves.find(
@@ -298,8 +447,43 @@ export default function App() {
     if (aiThinking) return;
     setMultiverse((prev) => undoLastStagedMove(prev));
     setSelectedCoord(null);
+    setHoveredMove(null);
+    setPendingPromotionMove(null);
     soundFX.playSelect();
   }, [aiThinking]);
+
+  const handleUndoLastTurn = useCallback(() => {
+    if (aiThinking) return;
+    setMultiverse((prev) => undoLastTurn(prev));
+    setSelectedCoord(null);
+    setHoveredMove(null);
+    setPendingPromotionMove(null);
+    document.body.dataset.state = 'playing';
+    setGameState('playing');
+    soundFX.playSelect();
+  }, [aiThinking]);
+
+  const handleRewindToTurn = useCallback(
+    (turnIdx: number) => {
+      if (aiThinking) return;
+      setMultiverse((prev) => rewindToTurnIndex(prev, turnIdx));
+      setSelectedCoord(null);
+      setHoveredMove(null);
+      setPendingPromotionMove(null);
+      document.body.dataset.state = 'playing';
+      setGameState('playing');
+      soundFX.playSelect();
+    },
+    [aiThinking]
+  );
+
+  const handleFocusBoard = useCallback((l: number, t: number) => {
+    setFocusBoardTarget((prev) => ({
+      l,
+      t,
+      seq: (prev?.seq ?? 0) + 1,
+    }));
+  }, []);
 
   const handleSubmitTurn = useCallback(() => {
     if (aiThinking) return;
@@ -315,6 +499,8 @@ export default function App() {
       return submitTurnPure(prev);
     });
     setSelectedCoord(null);
+    setHoveredMove(null);
+    setPendingPromotionMove(null);
   }, [aiThinking]);
 
   const handleToggleMute = useCallback(() => {
@@ -337,6 +523,8 @@ export default function App() {
     if (aiTimerRef.current) clearTimeout(aiTimerRef.current);
     setAiThinking(false);
     setSelectedCoord(null);
+    setHoveredMove(null);
+    setPendingPromotionMove(null);
     setShowGuideModal(false);
     document.body.dataset.state = 'title';
     setGameState('title');
@@ -351,11 +539,15 @@ export default function App() {
 
       if (e.key === 'Escape') {
         e.preventDefault();
-        if (showGuideModal) {
+        if (pendingPromotionMove) {
+          setPendingPromotionMove(null);
+        } else if (showGuideModal) {
           setShowGuideModal(false);
+        } else if (showMoveLogDrawer) {
+          setShowMoveLogDrawer(false);
         } else if (selectedCoord) {
           setSelectedCoord(null);
-        } else {
+        } else if (gameState === 'playing' || gameState === 'paused') {
           handleTogglePause();
         }
       } else if (e.key === 'p' || e.key === 'P') {
@@ -370,6 +562,12 @@ export default function App() {
       } else if (e.key === 'g' || e.key === 'G') {
         e.preventDefault();
         setShowGuideModal((v) => !v);
+      } else if (e.key === 's' || e.key === 'S') {
+        e.preventDefault();
+        setSliceHighlightEnabled((v) => !v);
+      } else if (e.key === 'h' || e.key === 'H') {
+        e.preventDefault();
+        setShowMoveLogDrawer((v) => !v);
       } else if ((e.key === 'z' || e.key === 'Z') && gameState === 'playing') {
         e.preventDefault();
         handleUndoStaged();
@@ -383,7 +581,9 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [
     gameState,
+    pendingPromotionMove,
     showGuideModal,
+    showMoveLogDrawer,
     selectedCoord,
     handleTogglePause,
     handleToggleMute,
@@ -400,6 +600,12 @@ export default function App() {
           onSelectVariant={setSelectedVariant}
           opponentMode={opponentMode}
           onSelectOpponentMode={setOpponentMode}
+          aiPersona={aiPersona}
+          onSelectAiPersona={setAiPersona}
+          promotionRule={promotionRule}
+          onSelectPromotionRule={setPromotionRule}
+          timelineActivationDelta={timelineActivationDelta}
+          onSelectTimelineActivationDelta={setTimelineActivationDelta}
           onStartGame={handleStartGame}
         />
       )}
@@ -411,11 +617,17 @@ export default function App() {
             selectedCoord={selectedCoord}
             legalMovesForSelected={legalMovesForSelected}
             threats={activeThreats}
+            radarWarnings={radarWarnings}
             showAllHistoryVectors={showAllHistoryVectors}
+            sliceHighlightEnabled={sliceHighlightEnabled}
+            hoveredCoord={hoveredCoord}
+            hoveredMove={hoveredMove}
+            onHoverSquare={handleHoverSquare}
             onSquareClick={handleSquareClick}
             onSubmitTurn={handleSubmitTurn}
             onUndoStaged={handleUndoStaged}
             focusPresentSignal={focusPresentSignal}
+            focusBoardTarget={focusBoardTarget}
           />
 
           <GameHUD
@@ -425,8 +637,12 @@ export default function App() {
             selectedPiece={selectedPiece}
             legalMovesForSelected={legalMovesForSelected}
             threats={activeThreats}
+            radarWarnings={radarWarnings}
+            pendingPromotionMove={pendingPromotionMove}
             isMuted={isMuted}
             showAllHistoryVectors={showAllHistoryVectors}
+            sliceHighlightEnabled={sliceHighlightEnabled}
+            showMoveLogDrawer={showMoveLogDrawer}
             showGuideModal={showGuideModal}
             aiThinking={aiThinking}
             onToggleMute={handleToggleMute}
@@ -436,9 +652,20 @@ export default function App() {
             onUndoStaged={handleUndoStaged}
             onSubmitTurn={handleSubmitTurn}
             onToggleHistoryVectors={() => setShowAllHistoryVectors((v) => !v)}
+            onToggleSliceHighlight={() => setSliceHighlightEnabled((v) => !v)}
+            onToggleMoveLogDrawer={() => setShowMoveLogDrawer((v) => !v)}
             onToggleGuideModal={() => setShowGuideModal((v) => !v)}
             onChangeVariant={handleChangeVariantInHUD}
+            onChangeAiPersona={handleChangeAiPersonaInHUD}
+            onChangePromotionRule={handleChangePromotionRuleInHUD}
+            onChangeTimelineActivationDelta={handleChangeTimelineActivationDeltaInHUD}
+            onConfirmPromotion={handleConfirmPromotion}
+            onCancelPromotion={handleCancelPromotion}
             onExecuteMoveDirect={handleExecuteMove}
+            onHoverMove={setHoveredMove}
+            onUndoLastTurn={handleUndoLastTurn}
+            onRewindToTurn={handleRewindToTurn}
+            onFocusBoard={handleFocusBoard}
           />
         </>
       )}

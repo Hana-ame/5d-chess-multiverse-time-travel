@@ -57,6 +57,21 @@ export interface Messages {
   pauseGame: string;
   selectRulesetAria: string;
   puzzleObjective: string;
+  axisRule_p: string;
+  axisRule_r: string;
+  axisRule_b: string;
+  axisRule_n: string;
+  axisRule_q: string;
+  axisRule_k: string;
+  axisRule_u: string;
+  axisRule_d: string;
+  guideAxisTitle: string;
+  guideAxisBody: string;
+  guideTimelineTitle: string;
+  guideTimelineBody: string;
+  guideRulesTitle: string;
+  guideRulesBody: string;
+  guideAria: string;
   spacetimeCheck: string;
   timeJumpsLabel: string;
   readyToSubmit: string;
@@ -137,6 +152,10 @@ export interface Messages {
   status_playable_white: string;
   status_playable_black: string;
   status_staged_revise: string;
+  status_staged: string;
+  status_moved_revise: string;
+  undoStaged: string;
+  undoStagedTitle: string;
 
   // Timeline row labels
   timeline_active: string;
@@ -177,6 +196,85 @@ export interface Messages {
   zoomOut: string;
   zoomIn: string;
   centerOnPresent: string;
+
+  // --- New-version (AI Studio) additions ---
+  // Match result / gameover header
+  matchResult: string;
+  whiteWins: string;
+  blackWins: string;
+  stalemateShort: string;
+  // Ruleset / mode selectors
+  selectAiPersona: string;
+  selectPromotionPiece: string;
+  selectTimelineActivation: string;
+  thePresent: string;
+  checkmateForensicsTitle: string;
+  // AI personas
+  persona_novice: string;
+  persona_tactician: string;
+  persona_chronomancer: string;
+  persona_badge_novice: string;
+  persona_badge_tactician: string;
+  persona_badge_chronomancer: string;
+  persona_desc_novice: string;
+  persona_desc_tactician: string;
+  persona_desc_chronomancer: string;
+  // Promotion rules
+  promotion_auto_queen: string;
+  promotion_choose_piece: string;
+  // Timeline activation deltas
+  delta_1: string;
+  delta_2: string;
+  delta_99: string;
+  // New variants (unicorn snipe / dragon tesseract)
+  variant_puzzle_unicorn_snipe: string;
+  variant_puzzle_dragon_tesseract: string;
+  variantSub_puzzle_unicorn_snipe: string;
+  variantSub_puzzle_dragon_tesseract: string;
+  variantDesc_puzzle_unicorn_snipe: string;
+  variantDesc_puzzle_dragon_tesseract: string;
+  puzzleGoal_puzzle_unicorn_snipe: string;
+  puzzleGoal_puzzle_dragon_tesseract: string;
+  // Board status labels (new version uppercase variants)
+  statusPlayablePresent: string;
+  statusMoveRequired: string;
+  statusHistory: string;
+  statusActive: string;
+  statusInactive: string;
+  statusWhite: string;
+  statusBlack: string;
+  // Forensics / misc
+  active: string;
+  inactive: string;
+  act: string;
+  selectAnyPieceHint: string;
+  sameSquareSlice: string;
+  onLabel: string;
+  offLabel: string;
+  promotionRuleToggleTitle: string;
+  aiPersonaTitle: string;
+  customRulesTitle: string;
+  pawnPromotionTitle: string;
+  timelineActivationTitle: string;
+  deltaSub_2: string;
+  deltaSub_1: string;
+  deltaSub_99: string;
+  deltaN_activation: string;
+  promotionPanelTitle: string;
+  promotionPanelSub: string;
+  promotionQueenTitle: string;
+  promotionQueenSub: string;
+  title: string;
+  axisFile: string;
+  axisRank: string;
+  axisTurn: string;
+  axisTimeline: string;
+  overviewPrefix: string;
+  overviewSuffix: string;
+  legalCastling: string;
+  legalEnPassant: string;
+  legalSpatial: string;
+  legalTimeTravel: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -223,7 +321,6 @@ export const en: Messages = {
   restartMatch: 'Restart Match',
   pauseGame: 'Pause Game [P]',
   selectRulesetAria: 'Select Ruleset or Scenario',
-  puzzleObjective: 'PUZZLE OBJECTIVE',
   spacetimeCheck: 'SPACETIME CHECK',
   timeJumpsLabel: 'Time Jumps:',
   readyToSubmit: 'All Present timelines satisfied — Ready to Submit Turn',
@@ -322,7 +419,6 @@ export const en: Messages = {
   badge_history: 'HISTORY',
   undoStagedMoveTitle: 'Undo staged move',
 
-  emptySquare: 'Empty',
   legalSpatialMove: ' · Legal Spatial Move',
   legalTimeTravelTarget: ' · Legal Time Travel Target',
 
@@ -343,6 +439,105 @@ export const en: Messages = {
   zoomOut: 'Zoom Out Multiverse',
   zoomIn: 'Zoom In Multiverse',
   centerOnPresent: 'Center on Present',
+
+  // --- New-version (AI Studio) additions (English) ---
+  matchResult: 'MATCH RESULT',
+  whiteWins: 'White Wins',
+  blackWins: 'Black Wins',
+  stalemateShort: 'Stalemate',
+  selectAiPersona: 'Select AI Persona',
+  selectPromotionPiece: 'Select Promotion Piece',
+  selectTimelineActivation: 'Select Timeline Activation Threshold',
+  thePresent: 'THE PRESENT',
+  checkmateForensicsTitle: 'Checkmate Forensics and Match Resolution',
+  persona_novice: 'Novice',
+  persona_tactician: 'Tactician',
+  persona_chronomancer: 'Chronomancer',
+  persona_badge_novice: '2D Focus',
+  persona_badge_tactician: 'Balanced',
+  persona_badge_chronomancer: 'Aggressive 5D',
+  persona_desc_novice: 'Prefers standard 2D spatial moves and rarely initiates timeline splits.',
+  persona_desc_tactician: 'Balances solid 2D board defense with tactical time jumps and checks.',
+  persona_desc_chronomancer:
+    'Actively hunts past Kings in HISTORY and branches parallel timelines for cross-spacetime forks.',
+  promotion_auto_queen: 'Auto-Queen',
+  promotion_choose_piece: 'Choose Piece',
+  delta_1: 'Standard +1 (diff ≤ 1 active)',
+  delta_2: 'Wide +2 (diff ≤ 2 active)',
+  delta_99: 'All Timelines Always Active',
+  variant_puzzle_unicorn_snipe: 'Puzzle III: Unicorn Tri-Axial Snipe',
+  variant_puzzle_dragon_tesseract: 'Puzzle IV: Dragon Tesseract Mate',
+  variantSub_puzzle_unicorn_snipe: '3D Triagonal Vector (|ΔX| = |ΔY| = |ΔT|)',
+  variantSub_puzzle_dragon_tesseract: '4D Quadragonal Vector (|ΔX| = |ΔY| = |ΔT| = |ΔL|)',
+  variantDesc_puzzle_unicorn_snipe:
+    'The Unicorn only moves along 3 axes simultaneously. Leap your Unicorn from L0·T3W (c3) 2 steps left, 2 steps up, and 2 turns into the past to snipe Black’s King at L0·T1W (a5)!',
+  variantDesc_puzzle_dragon_tesseract:
+    'The Dragon moves equally along all 4 axes at once! From Timeline +L1·T2W (b4), leap 1 file left, 1 rank up, 1 turn back, and 1 timeline down to L0·T1W (a5)!',
+  puzzleGoal_puzzle_unicorn_snipe:
+    'Use your Unicorn (c3) to capture or check Black’s past King at L0·T1W (a5) via a 3-axis triagonal jump.',
+  puzzleGoal_puzzle_dragon_tesseract:
+    'Use your Dragon on +L1·T2W (b4) to strike Black’s past King at L0·T1W (a5) across all 4 dimensions.',
+  statusPlayablePresent: 'PLAYABLE · PRESENT',
+  statusMoveRequired: 'MOVE REQUIRED',
+  statusHistory: 'HISTORY',
+  statusActive: 'Active',
+  statusInactive: 'Inactive',
+  statusWhite: 'White (W)',
+  statusBlack: 'Black (B)',
+  active: 'Active',
+  inactive: 'Inactive',
+  act: 'Act',
+  selectAnyPieceHint:
+    'Select any {color} piece on a highlighted leaf board · Hover purple targets for Ghost Branch Preview · Hold Alt for Same-Square Slice.',
+  sameSquareSlice: 'Same-Square Slice [S]',
+  onLabel: 'ON',
+  offLabel: 'OFF',
+  promotionRuleToggleTitle:
+    'Toggle pawn promotion rule: choose-piece panel (variant/extended) vs auto-queen (Steam original)',
+  aiPersonaTitle: "AI CHRONOMANCER PERSONA",
+  customRulesTitle: "CUSTOM RULES CONFIGURATION (switchable in-game)",
+  pawnPromotionTitle: "PAWN PROMOTION RULE",
+  timelineActivationTitle: "TIMELINE ACTIVATION THRESHOLD",
+  deltaSub_2: "Δ≥3 selectable",
+  deltaSub_1: "Δ≥2 selectable",
+  deltaSub_99: "no cap",
+  deltaN_activation: "Δ≤{n} activated",
+  promotionPanelTitle: "Choose-piece panel",
+  promotionPanelSub: "Variant / Extended (6 pieces)",
+  promotionQueenTitle: "Auto-Queen",
+  promotionQueenSub: "Steam original (Auto-Q)",
+  title: "5D CHESS",
+  axisFile: "File (X)",
+  axisRank: "Rank (Y)",
+  axisTurn: "Turn Time (T)",
+  axisTimeline: "Parallel Timelines (L)",
+  overviewPrefix: "Every piece moves across four axes:",
+  overviewSuffix: ". Leap into the past to branch new timelines, evade present threats, or deliver retrocausal checkmate.",
+  emptySquare: "Empty",
+  legalCastling: " · Legal 2D Castling",
+  legalEnPassant: " · Legal 2D En Passant",
+  legalSpatial: " · Legal Spatial Move",
+  legalTimeTravel: " · Legal Time Travel Target",
+  puzzleObjective: "PUZZLE OBJECTIVE",
+  axisRule_p: "Advances 1 step along Rank (Y) or Timeline (L); captures diagonally in (X,Y) or (T,L).",
+  axisRule_r: "Slides any number of steps along any 1 axis: File (X), Rank (Y), Time (T), or Timeline (L).",
+  axisRule_b: "Slides equal steps along any 2 axes simultaneously (e.g. X+Y, X+T, Y+L, T+L).",
+  axisRule_n: "Jumps 2 steps along any 1 axis and 1 step along any other axis in 4D spacetime.",
+  axisRule_q: "Slides equal steps along 1, 2, 3, or all 4 axes simultaneously.",
+  axisRule_k: "Steps 1 unit along any combination of 1, 2, 3, or 4 spacetime axes.",
+  axisRule_u: "Slides equal steps along any 3 axes simultaneously (3D Triagonal).",
+  axisRule_d: "Slides equal steps along all 4 axes simultaneously (4D Quadragonal).",
+  guideAxisTitle: "1. The 4 Axes (X, Y, T, L):",
+  guideAxisBody: "Standard chess uses File (X) and Rank (Y). 5D Chess adds Turn Time (T) (horizontal columns) and Parallel Timelines (L) (vertical rows).",
+  guideTimelineTitle: "2. Symmetric Active Timelines (+1 Rule):",
+  guideTimelineBody: "When one player branches ≥2 more timelines than the opponent, the excess outer timelines become INACTIVE (still playable, but optional) until the opponent branches a new timeline and reactivates them!",
+  guideRulesTitle: "3. Canonical Promotion, Castling & En Passant:",
+  guideRulesBody: "Per original Steam 5D Chess rules, Pawn promotion is strictly Auto-Queen, and Castling & En Passant are strictly 2D single-board spatial moves (never generalized across time or timelines).",
+  guideAria: "5D Spacetime Movement Guide",
+  status_staged: "STAGED",
+  status_moved_revise: "MOVED · REVISE",
+  undoStaged: "Undo",
+  undoStagedTitle: "Undo staged move",
 };
 
 // ---------------------------------------------------------------------------
@@ -389,7 +584,6 @@ export const zh: Messages = {
   restartMatch: '重新开始对局',
   pauseGame: '暂停游戏 [P]',
   selectRulesetAria: '选择规则集或场景',
-  puzzleObjective: '谜题目标',
   spacetimeCheck: '时空将军',
   timeJumpsLabel: '时间跳跃：',
   readyToSubmit: '所有当前时间线已满足 — 可以提交回合',
@@ -485,7 +679,6 @@ export const zh: Messages = {
   badge_history: '历史',
   undoStagedMoveTitle: '撤销暂存走法',
 
-  emptySquare: '空',
   legalSpatialMove: ' · 合法空间走法',
   legalTimeTravelTarget: ' · 合法时空旅行目标',
 
@@ -506,6 +699,103 @@ export const zh: Messages = {
   zoomOut: '缩小多元宇宙',
   zoomIn: '放大多元宇宙',
   centerOnPresent: '聚焦现在',
+
+  // --- New-version (AI Studio) additions (中文) ---
+  matchResult: '终局状态',
+  whiteWins: '白方绝杀获胜',
+  blackWins: '黑方绝杀获胜',
+  stalemateShort: '僵局平局',
+  selectAiPersona: '选择 AI 性格',
+  selectPromotionPiece: '选择升变棋子',
+  selectTimelineActivation: '选择时间线激活阈值',
+  thePresent: '现在',
+  checkmateForensicsTitle: '将杀取证与终局判定',
+  persona_novice: '新手 · 空间新手',
+  persona_tactician: '战术家 · 时空战术家',
+  persona_chronomancer: '时间法师 · 时间狂魔',
+  persona_badge_novice: '2D 专注',
+  persona_badge_tactician: '均衡',
+  persona_badge_chronomancer: '激进 5D',
+  persona_desc_novice: '偏好标准 2D 空间走法，很少主动分叉时间线。',
+  persona_desc_tactician: '兼顾稳健的 2D 棋盘防守与战术性时间跳跃和将军。',
+  persona_desc_chronomancer: '主动猎杀历史中的过去之王，并分叉平行时间线制造跨时空分叉。',
+  promotion_auto_queen: '自动升后',
+  promotion_choose_piece: '选择棋子',
+  delta_1: '标准 +1（差值 ≤ 1 激活）',
+  delta_2: '宽 +2（差值 ≤ 2 激活）',
+  delta_99: '所有时间线始终激活',
+  variant_puzzle_unicorn_snipe: '谜题三：独角兽三轴狙击',
+  variant_puzzle_dragon_tesseract: '谜题四：龙之超立方将杀',
+  variantSub_puzzle_unicorn_snipe: '3D 三对角向量 (|ΔX| = |ΔY| = |ΔT|)',
+  variantSub_puzzle_dragon_tesseract: '4D 四对角向量 (|ΔX| = |ΔY| = |ΔT| = |ΔL|)',
+  variantDesc_puzzle_unicorn_snipe:
+    '独角兽仅同时沿 3 条轴移动。让你的独角兽从 L0·T3W (c3) 向左 2 步、向上 2 步、回到 2 回合前，狙击黑方位于 L0·T1W (a5) 的王！',
+  variantDesc_puzzle_dragon_tesseract:
+    '龙同时沿全部 4 条轴等距移动！从时间线 +L1·T2W (b4) 出发，向左 1 格、向上 1 格、回退 1 回合、下降 1 条时间线到 L0·T1W (a5)！',
+  puzzleGoal_puzzle_unicorn_snipe:
+    '用你的独角兽 (c3) 通过三轴三对角跳跃，吃掉或将军黑方位于 L0·T1W (a5) 的过去之王。',
+  puzzleGoal_puzzle_dragon_tesseract:
+    '用你在 +L1·T2W (b4) 的龙，跨全部 4 个维度打击黑方位于 L0·T1W (a5) 的过去之王。',
+  statusPlayablePresent: '可玩 · 现在',
+  statusMoveRequired: '必须走棋',
+  statusHistory: '历史',
+  statusActive: '活跃',
+  statusInactive: '非活跃',
+  statusWhite: '白方 (W)',
+  statusBlack: '黑方 (B)',
+  active: '活跃',
+  inactive: '非活跃',
+  act: '激活',
+  selectAnyPieceHint:
+    '选择高亮叶棋盘上的任意{color}棋子 · 悬停紫色目标可预览幽灵分支 · 按住 Alt 同格切片。',
+  sameSquareSlice: '同格切片 [S]',
+  onLabel: '开',
+  offLabel: '关',
+  promotionRuleToggleTitle: '切换兵底线升变规则：自选升变面板（变体/扩展） vs 只升王后（Steam原版）',
+  aiPersonaTitle: "AI 风格与难度",
+  customRulesTitle: "可选升变与时间线激活规则（局内亦可随时切换）",
+  pawnPromotionTitle: "兵底线升变规则",
+  timelineActivationTitle: "时间线对称激活上限",
+  deltaSub_2: "差≥3 可选",
+  deltaSub_1: "差≥2 可选",
+  deltaSub_99: "无上限",
+  deltaN_activation: "相差 ≤{n} 激活",
+  promotionPanelTitle: "自选升变面板",
+  promotionPanelSub: "变体/扩展 (6种棋子)",
+  promotionQueenTitle: "只升王后",
+  promotionQueenSub: "原版规则 (Auto-Q)",
+  title: "5D 国际象棋",
+  axisFile: "横列 (X)",
+  axisRank: "纵列 (Y)",
+  axisTurn: "回合时间 (T)",
+  axisTimeline: "平行时间线 (L)",
+  overviewPrefix: "每枚棋子横跨四个轴：",
+  overviewSuffix: "。跃入过去可分支新时间线、规避当前威胁、或发动逆因果将杀。",
+  emptySquare: "空",
+  legalCastling: " · 合法 2D 王车易位",
+  legalEnPassant: " · 合法 2D 吃过路兵",
+  legalSpatial: " · 合法空间移动",
+  legalTimeTravel: " · 合法时间旅行目标",
+  puzzleObjective: "谜题目标",
+  axisRule_p: "沿纵列 (Y) 或时间线 (L) 前进 1 步；在 (X,Y) 或 (T,L) 斜吃。",
+  axisRule_r: "沿任一单轴滑动任意步：横列 (X)、纵列 (Y)、时间 (T) 或时间线 (L)。",
+  axisRule_b: "沿任意 2 轴同时等距滑动（如 X+Y、X+T、Y+L、T+L）。",
+  axisRule_n: "在 4D 时空沿任一轴跳 2 步、沿另一轴跳 1 步。",
+  axisRule_q: "沿 1、2、3 或全部 4 轴同时等距滑动。",
+  axisRule_k: "沿任意 1、2、3 或 4 个时空轴组合走 1 单位。",
+  axisRule_u: "沿任意 3 轴同时等距滑动（3D 三对角）。",
+  axisRule_d: "沿全部 4 轴同时等距滑动（4D 四对角）。",
+  guideAxisTitle: "1. 四轴 (X, Y, T, L)：",
+  guideAxisBody: "标准国际象棋使用横列 (X) 和纵列 (Y)。5D 国际象棋新增回合时间 (T)（水平列）和平行时间线 (L)（垂直行）。",
+  guideTimelineTitle: "2. 对称激活时间线 (+1 规则)：",
+  guideTimelineBody: "当一方比分出对手多出 ≥2 条时间线时，多出的外侧时间线变为非激活（可选走子，但非必须），直到对手分支新时间线重新激活它们！",
+  guideRulesTitle: "3. 标准升变、王车易位与吃过路兵：",
+  guideRulesBody: "按 Steam 原版 5D 国际象棋规则，兵升变严格为自动变王后，王车易位与吃过路兵严格为 2D 单棋盘空间走法（绝不跨时间或时间线泛化）。",
+  guideAria: "5D 时空移动指南",
+  status_staged: "已暂存",
+  status_moved_revise: "已移动 · 可修改",
+  undoStaged: "撤销",
+  undoStagedTitle: "撤销暂存走子",
 };
 
 // ---------------------------------------------------------------------------
@@ -534,8 +824,8 @@ function readInitialLocale(): Locale {
 interface I18nContextValue {
   locale: Locale;
   setLocale: (l: Locale) => void;
-  t: (key: keyof Messages) => string;
-  tf: (key: keyof Messages, vars?: VarDict) => string;
+  t: (key: keyof Messages | string) => string;
+  tf: (key: keyof Messages | string, vars?: VarDict) => string;
   messages: Messages;
 }
 
@@ -562,12 +852,13 @@ export const I18nProvider: React.FC<{ children: React.ReactNode }> = ({
   const messages = useMemo(() => (locale === 'zh' ? zh : en), [locale]);
 
   const t = useCallback(
-    (key: keyof Messages) => messages[key],
+    (key: keyof Messages | string) => messages[key as keyof Messages],
     [messages]
   );
 
   const tf = useCallback(
-    (key: keyof Messages, vars?: VarDict) => formatMessage(messages[key], vars),
+    (key: keyof Messages | string, vars?: VarDict) =>
+      formatMessage(messages[key as keyof Messages], vars),
     [messages]
   );
 
