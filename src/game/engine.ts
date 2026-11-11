@@ -2146,11 +2146,8 @@ export function submitTurnPure(state: MultiverseState): MultiverseState {
   // Check if the incoming player has any legal moves on their playable boards
   const playableBoards = getPlayableBoards(next, next.turnColor);
   let totalLegalMoves = 0;
-  const stuckMandatoryBoards: BoardState[] = [];
-  const allLegalMoves: Move5D[] = [];
 
   for (const pb of playableBoards) {
-    let boardMoves = 0;
     for (let y = 0; y < next.boardSize; y++) {
       for (let x = 0; x < next.boardSize; x++) {
         const piece = pb.board.squares[y][x];
@@ -2161,22 +2158,24 @@ export function submitTurnPure(state: MultiverseState): MultiverseState {
             x,
             y,
           });
-          boardMoves += moves.length;
           totalLegalMoves += moves.length;
-          allLegalMoves.push(...moves);
         }
       }
     }
-    if (pb.isMandatory && boardMoves === 0) {
-      stuckMandatoryBoards.push(pb.board);
-    }
   }
 
-  const hasUnrescuableMandatoryBoard = stuckMandatoryBoards.some(
-    (sb) => !allLegalMoves.some((m) => m.to.l === sb.l && m.to.t === sb.t)
-  );
+  // A mandatory board with no on-board legal move is NOT an automatic loss.
+  // In 5D Chess a player may escape via a spacetime move (branch/merge/hop) that
+  // relocates the King or reshapes the active-board set, so a board with no local
+  // legal move must not by itself declare checkmate. The old
+  // `hasUnrescuableMandatoryBoard` test wrongly used "some legal move lands on the
+  // stuck board" as a proxy for "the stuck board can be saved" — it ignored
+  // legitimate spacetime escapes whose destination is a different board, so a player
+  // who COULD jump the King away was declared checkmated. Only a total absence of
+  // any legal move (on ANY playable board) is a true mate / stalemate.
+  const isCheckmated = totalLegalMoves === 0 && playableBoards.length > 0;
 
-  if ((totalLegalMoves === 0 || hasUnrescuableMandatoryBoard) && playableBoards.length > 0) {
+  if (isCheckmated) {
     const threats = findActiveAndImpendingThreats(next, next.turnColor);
     const forensics = buildCheckmateForensics(
       next,
@@ -2264,22 +2263,37 @@ export function computeAITurn(state: MultiverseState): MultiverseState {
       break;
     }
 
-    const targetBoards = mandatory.length > 0 ? mandatory : playable.filter((p) => p.isActiveTimeline);
+    // When mandatory boards exist the AI must still be allowed to search EVERY
+    // active board, not just the mandatory ones: a non-mandatory active board may
+    // hold a spacetime move (branch / merge / hop) that travels to a stuck mandatory
+    // board and resolves its check (e.g. block, capture the attacker, or move a King).
+    // The old code restricted the search to `mandatory` only, so a rescue move living
+    // on an optional active board was never seen and the AI wrongly declared mate.
+    const targetBoards =
+      mandatory.length > 0
+        ? playable.filter((p) => p.isActiveTimeline || p.isMandatory)
+        : playable.filter((p) => p.isActiveTimeline);
     if (targetBoards.length === 0) break;
 
-    const boardToPlay = targetBoards[0].board;
+    // Gather candidate moves across ALL target boards, not just the first one.
+    // The old code only examined `targetBoards[0]`, so when the first mandatory
+    // board had no local legal move the AI immediately declared checkmate even if
+    // the King could escape via a spacetime move (branch/merge/hop) from ANOTHER
+    // board. We now search every target board and only give up when none has a move.
     const allCandidateMoves: { move: Move5D; score: number }[] = [];
 
-    for (let y = 0; y < working.boardSize; y++) {
-      for (let x = 0; x < working.boardSize; x++) {
-        const p = boardToPlay.squares[y][x];
-        if (!p || p.color !== working.turnColor) continue;
-        const legal = getLegalMovesForSquare(working, {
-          l: boardToPlay.l,
-          t: boardToPlay.t,
-          x,
-          y,
-        });
+    for (const tb of targetBoards) {
+      const boardToPlay = tb.board;
+      for (let y = 0; y < working.boardSize; y++) {
+        for (let x = 0; x < working.boardSize; x++) {
+          const p = boardToPlay.squares[y][x];
+          if (!p || p.color !== working.turnColor) continue;
+          const legal = getLegalMovesForSquare(working, {
+            l: boardToPlay.l,
+            t: boardToPlay.t,
+            x,
+            y,
+          });
         for (const m of legal) {
           let score = 0;
           if (m.captured) {
@@ -2326,6 +2340,7 @@ export function computeAITurn(state: MultiverseState): MultiverseState {
           allCandidateMoves.push({ move: m, score });
         }
       }
+    }
     }
 
     if (allCandidateMoves.length === 0) {

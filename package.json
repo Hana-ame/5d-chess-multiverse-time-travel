@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist docs server.js",
     "lint": "tsc --noEmit",
-    "test": "tsx --test src/game/engine.test.ts src/game/regression.test.ts"
+    "test": "tsx --test src/game/engine.test.ts src/game/regression.test.ts src/game/mate_escape.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
