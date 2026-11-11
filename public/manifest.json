@@ -1,0 +1,31 @@
+{
+  "name": "5D Chess: Multiverse Time Travel",
+  "short_name": "5D Chess",
+  "description": "Web-native 5D Chess with Multiverse Time Travel featuring 4-axis spatial-temporal piece movement, parallel timeline branching, cross-timeline check detection, tactical presets, and an AI Chronomancer.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0B0F19",
+  "theme_color": "#0B0F19",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
